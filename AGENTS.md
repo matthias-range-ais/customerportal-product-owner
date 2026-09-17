@@ -3,7 +3,7 @@
 
 ## customerportal-product-owner
 
-Tool for product owners to run semi-automated EquipmentCloud customer-portal workflows via its REST API — currently done manually. First area: managing SoftwareCenter software versions/sets and assigning them to customer equipment hierarchies. Later: clustering OpenIssues (issues + discussions) into backlog items/roadmap themes. Stack: Node.js backend, local DB (SQLite or better, TBD), web frontend framework TBD — see TODOs below.
+Tool for product owners to run semi-automated EquipmentCloud customer-portal workflows via its REST API — currently done manually. First area: managing SoftwareCenter software versions/sets and assigning them to customer equipment hierarchies. Later: clustering OpenIssues (issues + discussions) into backlog items/roadmap themes. Stack: Node.js 24 + Fastify 5 (TypeScript) backend, React 19 + Vite frontend, local DB TBD (deferred to CAP-2) — see TODOs below.
 
 ## Policy
 
@@ -12,7 +12,7 @@ Tool for product owners to run semi-automated EquipmentCloud customer-portal wor
 - Only BasicAuth-secured EquipmentCloud endpoints are in scope; ignore the Bearer/OAuth2-secured `_oa` endpoint variants (`equipmenthub_oa`, `openissues_oa`) entirely.
 - Solo project: commit directly to `main`, no branch/PR requirement.
 - Follow general security best practices (OWASP-style); no stricter compliance standard mandated.
-- Produce an SBOM for releases (tool/command TODO once `package.json` exists).
+- Produce an SBOM for releases: `npm sbom` (CycloneDX format).
 
 ## Where things are
 
@@ -33,7 +33,11 @@ Tool for product owners to run semi-automated EquipmentCloud customer-portal wor
 
 ## Running and verifying
 
-- TODO: backend runtime/package manager, local DB, and frontend framework are not chosen yet — record the real install/run/test/build commands here once they are.
+- Install: `npm install` (root; npm workspaces also install `frontend/`).
+- Build: `npm run build` (builds `frontend/` via Vite, then compiles the backend with `tsc`).
+- Start: `npm start` (builds, then runs the single Fastify process on `http://127.0.0.1:3000`, serving the built frontend).
+- Dev (backend only, no live frontend rebuild yet): `npm run dev`.
+- TODO: local DB choice, and a test runner/lint setup, are still open (local DB deferred to CAP-2 per epics.md).
 
 ## Conventions that differ from defaults
 

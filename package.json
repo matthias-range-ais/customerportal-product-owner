@@ -1,0 +1,29 @@
+{
+  "name": "customerportal-product-owner",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "frontend"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "npm run build --workspace frontend && tsc -p tsconfig.json",
+    "start": "npm run build && node dist/api/server.js",
+    "dev": "tsx watch src/api/server.ts"
+  },
+  "dependencies": {
+    "@fastify/static": "^10.1.4",
+    "fastify": "^5.12.5"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.5",
+    "tsx": "^4.23.13",
+    "typescript": "~6.0.2"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true
+  }
+}
