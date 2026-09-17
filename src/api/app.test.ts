@@ -23,7 +23,7 @@ describe('buildApp', () => {
   });
 
   it('serves the built frontend shell on GET /', async () => {
-    const app = await buildApp();
+    const app = await buildApp({ logger: false });
 
     const response = await app.inject({ method: 'GET', url: '/' });
 
@@ -35,7 +35,7 @@ describe('buildApp', () => {
   });
 
   it('serves a built JS bundle that renders the German landing-page text', async () => {
-    const app = await buildApp();
+    const app = await buildApp({ logger: false });
 
     const page = await app.inject({ method: 'GET', url: '/' });
     const scriptSrc = page.body.match(/<script[^>]+src="([^"]+\.js)"/)?.[1];

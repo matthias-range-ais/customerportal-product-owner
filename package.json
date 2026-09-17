@@ -7,7 +7,8 @@
     "frontend"
   ],
   "engines": {
-    "node": ">=24"
+    "node": ">=24",
+    "npm": ">=11"
   },
   "scripts": {
     "build": "npm run build --workspace frontend && tsc -p tsconfig.json",

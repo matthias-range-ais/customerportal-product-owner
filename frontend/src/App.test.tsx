@@ -6,7 +6,7 @@ describe('App', () => {
   it('renders the landing page', () => {
     render(<App />);
 
-    expect(screen.getByText('customerportal-product-owner')).toBeDefined();
-    expect(screen.getByText('Grundgerüst läuft.')).toBeDefined();
+    expect(screen.getByText('customerportal-product-owner')).toBeInTheDocument();
+    expect(screen.getByText('Grundgerüst läuft.')).toBeInTheDocument();
   });
 });
