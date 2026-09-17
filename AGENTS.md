@@ -37,7 +37,8 @@ Tool for product owners to run semi-automated EquipmentCloud customer-portal wor
 - Build: `npm run build` (builds `frontend/` via Vite, then compiles the backend with `tsc`).
 - Start: `npm start` (builds, then runs the single Fastify process on `http://127.0.0.1:3000`, serving the built frontend).
 - Dev (backend only, no live frontend rebuild yet): `npm run dev`.
-- TODO: local DB choice, and a test runner/lint setup, are still open (local DB deferred to CAP-2 per epics.md).
+- Test: `npm test` (builds the frontend, then runs backend Vitest tests via Fastify's `inject()`, then frontend Vitest/Testing-Library tests).
+- TODO: local DB choice and a backend lint setup are still open (local DB deferred to CAP-2 per epics.md; frontend already has `oxlint` via `frontend/package.json`).
 
 ## Conventions that differ from defaults
 
