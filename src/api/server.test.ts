@@ -42,7 +42,7 @@ describe('server.ts entry point', () => {
   it('exits with code 1 and a clear message when the frontend has not been built', async () => {
     renameSync(indexHtml, indexHtmlMoved);
 
-    const { child, output } = runServer({ PORT: '0' });
+    const { child, output } = runServer({ PORT: '0', EQUIPMENTCLOUD_ENV: 'test' });
     const exitCode = await new Promise<number | null>((resolve) => {
       child.on('exit', resolve);
     });
@@ -52,7 +52,7 @@ describe('server.ts entry point', () => {
   }, 15000);
 
   it('binds to the HOST/PORT given via environment variables', async () => {
-    const { child, output } = runServer({ HOST: '127.0.0.1', PORT: '0' });
+    const { child, output } = runServer({ HOST: '127.0.0.1', PORT: '0', EQUIPMENTCLOUD_ENV: 'test' });
 
     try {
       await new Promise<void>((resolve, reject) => {
