@@ -3,7 +3,7 @@
 # in this environment) — same format/semantics as the script would produce.
 
 generated: 09-15-2026 12:00
-last_updated: 09-17-2026 00:00
+last_updated: 09-17-2026 16:20
 project: customerportal-product-owner
 project_key: NOKEY
 tracking_system: file-system
@@ -11,7 +11,7 @@ story_location: "docs/stories"
 
 development_status:
   epic-1: in-progress
-  1-1-project-scaffold: review
+  1-1-project-scaffold: done
   1-2-store-equipmentcloud-credentials-securely-select-environment: backlog
   1-3-verify-the-equipmentcloud-connection: backlog
   1-4-softwarecenter-versions-sets-overview: backlog
