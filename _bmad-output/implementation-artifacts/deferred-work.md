@@ -16,3 +16,9 @@
 - source_spec: `{project-root}/_bmad-output/implementation-artifacts/spec-1-1-project-scaffold.md`
   summary: Fix spec-1-1-project-scaffold.md's Implementation Notes — it says the `frontend/dist` build-output coupling comment lives in `src/api/server.ts`; it's actually in `src/api/app.ts` (moved there when `server.ts` was split into `app.ts` + a thin entry point).
   evidence: Confirmed by reading both files. Real inaccuracy, but the fix means editing the spec document itself, which this review's triage rules route to deferred rather than patching directly.
+
+## Deferred from: user manual testing of spec-1-2-store-equipmentcloud-credentials-securely-select-environment.md (2026-09-17)
+
+- source_spec: `{project-root}/_bmad-output/implementation-artifacts/spec-1-2-store-equipmentcloud-credentials-securely-select-environment.md`
+  summary: Introduce real app navigation (the settings screen should be one screen among several, not the entire app) once a second screen is needed.
+  evidence: User feedback after manual testing — expected the settings screen to be a distinct dialog/screen, not the app's sole view. Accepted as fine for Story 1.2 (no navigation system existed to build on), but should be addressed properly starting with the first story that adds a second screen (at latest Story 1.4, SoftwareCenter overview).

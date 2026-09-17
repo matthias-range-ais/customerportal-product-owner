@@ -123,61 +123,95 @@ function App() {
   }
 
   return (
-    <main>
-      <h1>EquipmentCloud-Verbindung</h1>
+    <main className="page">
+      <header className="page-header">
+        <h1>EquipmentCloud-Verbindung</h1>
+        {settings && (
+          <p className="active-environment" data-testid="active-environment">
+            Aktive Umgebung:{' '}
+            <strong>{settings.active ? ENVIRONMENT_LABELS[settings.active] : 'keine'}</strong>
+          </p>
+        )}
+      </header>
 
-      {loadError && <p role="alert">{loadError}</p>}
-
-      {settings && (
-        <p>Aktive Umgebung: {settings.active ? ENVIRONMENT_LABELS[settings.active] : 'keine'}</p>
+      {loadError && (
+        <p className="banner" role="alert">
+          {loadError}
+        </p>
+      )}
+      {switchError && (
+        <p className="banner" role="alert">
+          {switchError}
+        </p>
       )}
 
-      {switchError && <p role="alert">{switchError}</p>}
+      <div className="environments">
+        {settings &&
+          ENVIRONMENTS.map((environment) => {
+            const status = settings.environments[environment]
+            const isActive = settings.active === environment
 
-      {settings &&
-        ENVIRONMENTS.map((environment) => {
-          const status = settings.environments[environment]
-          const isActive = settings.active === environment
+            return (
+              <section key={environment} className="card" aria-label={ENVIRONMENT_LABELS[environment]}>
+                <div className="card-header">
+                  <h2>{ENVIRONMENT_LABELS[environment]}</h2>
+                  <div className="status-badges">
+                    <span className={`badge ${status.configured ? 'badge--configured' : 'badge--not-configured'}`}>
+                      {status.configured ? 'Konfiguriert' : 'Nicht konfiguriert'}
+                    </span>
+                    {isActive && <span className="badge badge--active">Aktiv</span>}
+                  </div>
+                </div>
 
-          return (
-            <section key={environment} aria-label={ENVIRONMENT_LABELS[environment]}>
-              <h2>{ENVIRONMENT_LABELS[environment]}</h2>
-              <p>
-                {status.configured ? 'Konfiguriert' : 'Nicht konfiguriert'}
-                {isActive ? ' · Aktiv' : ''}
-              </p>
+                <form className="field-group" onSubmit={(event) => void handleSave(environment, event)}>
+                  <div className="field">
+                    <label htmlFor={`${environment}-username`}>Benutzername</label>
+                    <input
+                      id={`${environment}-username`}
+                      type="text"
+                      autoComplete="username"
+                      value={forms[environment].username}
+                      onChange={(event) => updateForm(environment, 'username', event.target.value)}
+                    />
+                  </div>
+                  <div className="field">
+                    <label htmlFor={`${environment}-password`}>Passwort</label>
+                    <input
+                      id={`${environment}-password`}
+                      type="password"
+                      autoComplete="new-password"
+                      value={forms[environment].password}
+                      onChange={(event) => updateForm(environment, 'password', event.target.value)}
+                    />
+                  </div>
 
-              <form onSubmit={(event) => void handleSave(environment, event)}>
-                <label>
-                  Benutzername
-                  <input
-                    type="text"
-                    autoComplete="username"
-                    value={forms[environment].username}
-                    onChange={(event) => updateForm(environment, 'username', event.target.value)}
-                  />
-                </label>
-                <label>
-                  Passwort
-                  <input
-                    type="password"
-                    autoComplete="new-password"
-                    value={forms[environment].password}
-                    onChange={(event) => updateForm(environment, 'password', event.target.value)}
-                  />
-                </label>
-                <button type="submit">Speichern</button>
-              </form>
+                  {formErrors[environment] && (
+                    <p className="form-message form-message--error" role="alert">
+                      {formErrors[environment]}
+                    </p>
+                  )}
+                  {formSuccess[environment] && (
+                    <p className="form-message form-message--success">{formSuccess[environment]}</p>
+                  )}
 
-              {formErrors[environment] && <p role="alert">{formErrors[environment]}</p>}
-              {formSuccess[environment] && <p>{formSuccess[environment]}</p>}
-
-              <button type="button" onClick={() => void handleSelectActive(environment)} disabled={isActive}>
-                Als aktive Umgebung auswählen
-              </button>
-            </section>
-          )
-        })}
+                  <div className="form-actions">
+                    <button type="submit" className="button--primary">
+                      Speichern
+                    </button>
+                    <button
+                      type="button"
+                      className="button--secondary"
+                      onClick={() => void handleSelectActive(environment)}
+                      disabled={isActive}
+                    >
+                      Als aktive Umgebung auswählen
+                    </button>
+                  </div>
+                </form>
+              </section>
+            )
+          })}
+      </div>
     </main>
   )
 }

@@ -28,7 +28,7 @@ describe('App', () => {
     render(<App />)
 
     expect(await screen.findAllByText('Nicht konfiguriert')).toHaveLength(2)
-    expect(screen.getByText('Aktive Umgebung: keine')).toBeInTheDocument()
+    expect(screen.getByTestId('active-environment')).toHaveTextContent('Aktive Umgebung: keine')
   })
 
   it('saves credentials for an environment, shows it as configured, and does not echo the password back', async () => {
@@ -84,8 +84,8 @@ describe('App', () => {
 
     fireEvent.click(within(testSection).getByRole('button', { name: 'Als aktive Umgebung auswählen' }))
 
-    expect(await screen.findByText('Aktive Umgebung: Test')).toBeInTheDocument()
-    expect(within(testSection).getByText(/Aktiv/)).toBeInTheDocument()
+    await within(testSection).findByText(/Aktiv/)
+    expect(screen.getByTestId('active-environment')).toHaveTextContent('Aktive Umgebung: Test')
   })
 
   it('rejects selecting an environment with no stored credentials, with a clear message', async () => {
@@ -105,6 +105,6 @@ describe('App', () => {
         'Umgebung "Produktion" ist noch nicht konfiguriert. Bitte zuerst Zugangsdaten speichern.',
       ),
     ).toBeInTheDocument()
-    expect(screen.getByText('Aktive Umgebung: keine')).toBeInTheDocument()
+    expect(screen.getByTestId('active-environment')).toHaveTextContent('Aktive Umgebung: keine')
   })
 })
