@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import Fastify from 'fastify';
@@ -8,6 +9,12 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const frontendDist = path.resolve(__dirname, '..', '..', 'frontend', 'dist');
 
 export async function buildApp() {
+  if (!existsSync(path.join(frontendDist, 'index.html'))) {
+    throw new Error(
+      `Frontend build not found at ${frontendDist} — run \`npm run build\` before starting the server.`,
+    );
+  }
+
   const app = Fastify({ logger: true });
 
   await app.register(fastifyStatic, {

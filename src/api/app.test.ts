@@ -1,7 +1,27 @@
-import { describe, expect, it } from 'vitest';
+import { existsSync, renameSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { afterEach, describe, expect, it } from 'vitest';
 import { buildApp } from './app.js';
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const frontendDist = path.resolve(__dirname, '..', '..', 'frontend', 'dist');
+const indexHtml = path.join(frontendDist, 'index.html');
+const indexHtmlMoved = `${indexHtml}.movedForTest`;
+
 describe('buildApp', () => {
+  afterEach(() => {
+    if (existsSync(indexHtmlMoved)) {
+      renameSync(indexHtmlMoved, indexHtml);
+    }
+  });
+
+  it('fails fast with a clear error when the frontend has not been built', async () => {
+    renameSync(indexHtml, indexHtmlMoved);
+
+    await expect(buildApp()).rejects.toThrow('run `npm run build` before starting the server');
+  });
+
   it('serves the built frontend shell on GET /', async () => {
     const app = await buildApp();
 
