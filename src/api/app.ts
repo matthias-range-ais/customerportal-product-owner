@@ -15,6 +15,7 @@ const ENVIRONMENTS: readonly Environment[] = ['test', 'prod'];
 interface SettingsSnapshot {
   environments: Record<Environment, { configured: boolean }>;
   active: Environment | null;
+  activeUsername: string | null;
 }
 
 export interface BuildAppOptions {
@@ -50,7 +51,11 @@ export async function buildApp(options: BuildAppOptions = {}) {
     for (const environment of ENVIRONMENTS) {
       environments[environment] = { configured: credentialsPort.hasCredentials(environment) };
     }
-    return { environments, active: activeEnvironment };
+    return {
+      environments,
+      active: activeEnvironment,
+      activeUsername: activeEnvironment ? credentialsPort.getUsername(activeEnvironment) : null,
+    };
   }
 
   app.get('/api/settings', async () => settingsSnapshot());

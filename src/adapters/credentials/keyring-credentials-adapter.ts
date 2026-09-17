@@ -31,14 +31,23 @@ export class KeyringCredentialsAdapter implements CredentialsPort {
   }
 
   hasCredentials(environment: Environment): boolean {
+    return this.readStored(environment) !== null;
+  }
+
+  getUsername(environment: Environment): string | null {
+    return this.readStored(environment)?.username ?? null;
+  }
+
+  private readStored(environment: Environment): { username: string; password: string } | null {
     const entry = new Entry(this.service, environment);
     try {
-      return entry.getPassword() !== null;
+      const raw = entry.getPassword();
+      return raw === null ? null : (JSON.parse(raw) as { username: string; password: string });
     } catch {
-      // Store locked/inaccessible/ambiguous — treat as "not configured" rather
-      // than crash the settings screen; saveCredentials will surface a real
-      // problem with the store the next time it's attempted.
-      return false;
+      // Store locked/inaccessible/ambiguous, or a malformed stored value —
+      // treat as "not configured" rather than crash the settings screen;
+      // saveCredentials will surface a real problem the next time it's attempted.
+      return null;
     }
   }
 }

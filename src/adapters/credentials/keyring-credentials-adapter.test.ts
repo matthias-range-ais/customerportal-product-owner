@@ -92,6 +92,20 @@ describe('KeyringCredentialsAdapter', () => {
     }
   });
 
+  it('returns null for getUsername when the environment is not configured', () => {
+    const adapter = new KeyringCredentialsAdapter('test-service');
+
+    expect(adapter.getUsername('test')).toBeNull();
+  });
+
+  it('returns the stored username, never the password, for a configured environment', () => {
+    const adapter = new KeyringCredentialsAdapter('test-service');
+
+    adapter.saveCredentials('prod', 'alice', 'hunter2');
+
+    expect(adapter.getUsername('prod')).toBe('alice');
+  });
+
   it('uses separate entries for two adapters pointed at different services', () => {
     const appAdapter = new KeyringCredentialsAdapter('customerportal-product-owner');
     const otherAdapter = new KeyringCredentialsAdapter('some-other-app');

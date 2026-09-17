@@ -22,6 +22,10 @@ class InMemoryCredentialsPort implements CredentialsPort {
   hasCredentials(environment: Environment): boolean {
     return this.store.has(environment);
   }
+
+  getUsername(environment: Environment): string | null {
+    return this.store.get(environment)?.username ?? null;
+  }
 }
 
 // Stand-in that always fails the write, for exercising the storage-error path.
@@ -32,6 +36,10 @@ class FailingCredentialsPort implements CredentialsPort {
 
   hasCredentials(): boolean {
     return false;
+  }
+
+  getUsername(): string | null {
+    return null;
   }
 }
 
@@ -94,6 +102,7 @@ describe('settings routes', () => {
     expect(response.json()).toEqual({
       environments: { test: { configured: false }, prod: { configured: false } },
       active: null,
+      activeUsername: null,
     });
 
     await app.close();
@@ -256,6 +265,7 @@ describe('settings routes', () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.json().active).toBe('test');
+    expect(response.json().activeUsername).toBe('alice');
 
     await app.close();
   });

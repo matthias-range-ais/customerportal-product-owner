@@ -10,13 +10,15 @@ export function isEnvironment(value: unknown): value is Environment {
 /**
  * Stores and checks EquipmentCloud credentials for a given environment.
  *
- * No method here may return a raw secret — the settings screen can only show
- * whether an environment is configured, never the stored password. Only a
- * later EquipmentCloud-adapter construction step (Story 1.3) reads a raw
- * credential, and it does so directly from the concrete credentials adapter,
- * not through this port.
+ * No method here may return a password — the settings screen may show the
+ * stored username (so the Product Owner can see which login is active), but
+ * never the secret itself. Only a later EquipmentCloud-adapter construction
+ * step (Story 1.3) reads a raw password, and it does so directly from the
+ * concrete credentials adapter, not through this port.
  */
 export interface CredentialsPort {
   saveCredentials(environment: Environment, username: string, password: string): void;
   hasCredentials(environment: Environment): boolean;
+  /** The stored username for this environment, or `null` if not configured. Never the password. */
+  getUsername(environment: Environment): string | null;
 }

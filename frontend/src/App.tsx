@@ -5,6 +5,7 @@ type Environment = 'test' | 'prod'
 interface SettingsSnapshot {
   environments: Record<Environment, { configured: boolean }>
   active: Environment | null
+  activeUsername: string | null
 }
 
 const ENVIRONMENTS: Environment[] = ['test', 'prod']
@@ -129,7 +130,10 @@ function App() {
         {settings && (
           <p className="active-environment" data-testid="active-environment">
             Aktive Umgebung:{' '}
-            <strong>{settings.active ? ENVIRONMENT_LABELS[settings.active] : 'keine'}</strong>
+            <strong>
+              {settings.active ? ENVIRONMENT_LABELS[settings.active] : 'keine'}
+              {settings.active && settings.activeUsername ? ` (${settings.activeUsername})` : ''}
+            </strong>
           </p>
         )}
       </header>

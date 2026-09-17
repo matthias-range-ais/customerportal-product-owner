@@ -2,11 +2,19 @@ import { fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import App from './App.tsx'
 
-function settingsSnapshot(overrides: Partial<{ test: boolean; prod: boolean; active: 'test' | 'prod' | null }> = {}) {
-  const { test = false, prod = false, active = null } = overrides
+function settingsSnapshot(
+  overrides: Partial<{
+    test: boolean
+    prod: boolean
+    active: 'test' | 'prod' | null
+    activeUsername: string | null
+  }> = {},
+) {
+  const { test = false, prod = false, active = null, activeUsername = null } = overrides
   return {
     environments: { test: { configured: test }, prod: { configured: prod } },
     active,
+    activeUsername,
   }
 }
 
@@ -72,11 +80,13 @@ describe('App', () => {
     expect(within(testSection).getByText('Nicht konfiguriert')).toBeInTheDocument()
   })
 
-  it('selects a configured environment as active and shows it clearly', async () => {
+  it('selects a configured environment as active and shows it, together with its username, clearly', async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(jsonResponse(settingsSnapshot({ test: true })))
-      .mockResolvedValueOnce(jsonResponse(settingsSnapshot({ test: true, active: 'test' })))
+      .mockResolvedValueOnce(
+        jsonResponse(settingsSnapshot({ test: true, active: 'test', activeUsername: 'alice' })),
+      )
     vi.stubGlobal('fetch', fetchMock)
 
     render(<App />)
@@ -85,7 +95,7 @@ describe('App', () => {
     fireEvent.click(within(testSection).getByRole('button', { name: 'Als aktive Umgebung auswählen' }))
 
     await within(testSection).findByText(/Aktiv/)
-    expect(screen.getByTestId('active-environment')).toHaveTextContent('Aktive Umgebung: Test')
+    expect(screen.getByTestId('active-environment')).toHaveTextContent('Aktive Umgebung: Test (alice)')
   })
 
   it('rejects selecting an environment with no stored credentials, with a clear message', async () => {
