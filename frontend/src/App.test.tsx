@@ -22,6 +22,38 @@ function jsonResponse(body: unknown, ok = true, status = ok ? 200 : 400) {
   return { ok, status, json: async () => body } as Response
 }
 
+// Not-configured is the harmless default for the SoftwareOverview section's own
+// GET /api/software call, mounted alongside the environment cards — most tests here
+// don't care about it, they just need it not to desync the ordered per-URL queues below.
+const softwareNotConfigured = () => jsonResponse({ error: 'NOT_CONFIGURED' }, false, 409)
+
+/**
+ * Routes each `fetch(url, init)` call to a per-"METHOD URL" queue of canned responses,
+ * consumed in order. Needed because App now mounts <SoftwareOverview/>, whose own GET
+ * /api/software fires concurrently with App's GET /api/settings (child effects run before
+ * the parent's), so a single flat `mockResolvedValueOnce` chain can no longer assume a
+ * fixed call order across the two components.
+ */
+function mockFetchRoutes(routes: Record<string, Response[]>) {
+  const queues = new Map(Object.entries(routes).map(([key, responses]) => [key, [...responses]]))
+  return vi.fn((url: string, init?: { method?: string }) => {
+    const key = `${init?.method ?? 'GET'} ${url}`
+    const queue = queues.get(key)
+    if (!queue || queue.length === 0) {
+      throw new Error(`Unexpected fetch call: ${key}`)
+    }
+    return Promise.resolve(queue.shift()!)
+  })
+}
+
+function findCall(fetchMock: ReturnType<typeof vi.fn>, url: string) {
+  const call = fetchMock.mock.calls.find(([calledUrl]) => calledUrl === url)
+  if (!call) {
+    throw new Error(`No fetch call recorded for ${url}`)
+  }
+  return call
+}
+
 describe('App', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
@@ -30,7 +62,10 @@ describe('App', () => {
   it('shows both environments as not configured and no active environment on first launch', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValue(jsonResponse(settingsSnapshot())),
+      mockFetchRoutes({
+        'GET /api/settings': [jsonResponse(settingsSnapshot())],
+        'GET /api/software': [softwareNotConfigured()],
+      }),
     )
 
     render(<App />)
@@ -40,10 +75,11 @@ describe('App', () => {
   })
 
   it('saves credentials for an environment, shows it as configured, and does not echo the password back', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(jsonResponse(settingsSnapshot()))
-      .mockResolvedValueOnce(jsonResponse(settingsSnapshot({ test: true })))
+    const fetchMock = mockFetchRoutes({
+      'GET /api/settings': [jsonResponse(settingsSnapshot())],
+      'GET /api/software': [softwareNotConfigured()],
+      'POST /api/settings/credentials': [jsonResponse(settingsSnapshot({ test: true }))],
+    })
     vi.stubGlobal('fetch', fetchMock)
 
     render(<App />)
@@ -58,17 +94,19 @@ describe('App', () => {
     expect(within(testSection).getByText(/Konfiguriert/)).toBeInTheDocument()
     expect(within(testSection).getByLabelText('Passwort')).toHaveValue('')
 
-    const [, saveCall] = fetchMock.mock.calls
-    expect(saveCall[0]).toBe('/api/settings/credentials')
+    const saveCall = findCall(fetchMock, '/api/settings/credentials')
     expect(JSON.parse(saveCall[1].body)).toEqual({ environment: 'test', username: 'alice', password: 'secret' })
   })
 
   it('shows a validation message and does not update state when the server rejects empty credentials', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(jsonResponse(settingsSnapshot()))
-      .mockResolvedValueOnce(jsonResponse({ error: 'MISSING_CREDENTIALS' }, false, 400))
-    vi.stubGlobal('fetch', fetchMock)
+    vi.stubGlobal(
+      'fetch',
+      mockFetchRoutes({
+        'GET /api/settings': [jsonResponse(settingsSnapshot())],
+        'GET /api/software': [softwareNotConfigured()],
+        'POST /api/settings/credentials': [jsonResponse({ error: 'MISSING_CREDENTIALS' }, false, 400)],
+      }),
+    )
 
     render(<App />)
     await screen.findAllByText('Nicht konfiguriert')
@@ -81,13 +119,16 @@ describe('App', () => {
   })
 
   it('selects a configured environment as active and shows it, together with its username, clearly', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(jsonResponse(settingsSnapshot({ test: true })))
-      .mockResolvedValueOnce(
-        jsonResponse(settingsSnapshot({ test: true, active: 'test', activeUsername: 'alice' })),
-      )
-    vi.stubGlobal('fetch', fetchMock)
+    vi.stubGlobal(
+      'fetch',
+      mockFetchRoutes({
+        'GET /api/settings': [jsonResponse(settingsSnapshot({ test: true }))],
+        'GET /api/software': [softwareNotConfigured()],
+        'POST /api/settings/active-environment': [
+          jsonResponse(settingsSnapshot({ test: true, active: 'test', activeUsername: 'alice' })),
+        ],
+      }),
+    )
 
     render(<App />)
     const testSection = await screen.findByRole('region', { name: 'Test' })
@@ -99,11 +140,14 @@ describe('App', () => {
   })
 
   it('rejects selecting an environment with no stored credentials, with a clear message', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(jsonResponse(settingsSnapshot()))
-      .mockResolvedValueOnce(jsonResponse({ error: 'NOT_CONFIGURED' }, false, 409))
-    vi.stubGlobal('fetch', fetchMock)
+    vi.stubGlobal(
+      'fetch',
+      mockFetchRoutes({
+        'GET /api/settings': [jsonResponse(settingsSnapshot())],
+        'GET /api/software': [softwareNotConfigured()],
+        'POST /api/settings/active-environment': [jsonResponse({ error: 'NOT_CONFIGURED' }, false, 409)],
+      }),
+    )
 
     render(<App />)
     const prodSection = await screen.findByRole('region', { name: 'Produktion' })
@@ -119,7 +163,13 @@ describe('App', () => {
   })
 
   it('does not offer the "Verbindung testen" action for an unconfigured environment', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(settingsSnapshot())))
+    vi.stubGlobal(
+      'fetch',
+      mockFetchRoutes({
+        'GET /api/settings': [jsonResponse(settingsSnapshot())],
+        'GET /api/software': [softwareNotConfigured()],
+      }),
+    )
 
     render(<App />)
     const testSection = await screen.findByRole('region', { name: 'Test' })
@@ -128,10 +178,11 @@ describe('App', () => {
   })
 
   it('shows a clear success indicator when the connection check succeeds', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(jsonResponse(settingsSnapshot({ test: true })))
-      .mockResolvedValueOnce(jsonResponse({ ok: true }))
+    const fetchMock = mockFetchRoutes({
+      'GET /api/settings': [jsonResponse(settingsSnapshot({ test: true }))],
+      'GET /api/software': [softwareNotConfigured()],
+      'POST /api/settings/test-connection': [jsonResponse({ ok: true })],
+    })
     vi.stubGlobal('fetch', fetchMock)
 
     render(<App />)
@@ -140,19 +191,21 @@ describe('App', () => {
     fireEvent.click(within(testSection).getByRole('button', { name: 'Verbindung testen' }))
 
     expect(await within(testSection).findByText('Verbindung erfolgreich.')).toBeInTheDocument()
-    const [, checkCall] = fetchMock.mock.calls
-    expect(checkCall[0]).toBe('/api/settings/test-connection')
+    const checkCall = findCall(fetchMock, '/api/settings/test-connection')
     expect(JSON.parse(checkCall[1].body)).toEqual({ environment: 'test' })
   })
 
   it('shows the raw EquipmentCloud error when credentials are rejected', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(jsonResponse(settingsSnapshot({ test: true })))
-      .mockResolvedValueOnce(
-        jsonResponse({ ok: false, kind: 'http-error', status: 401, body: 'Unauthorized: bad credentials' }),
-      )
-    vi.stubGlobal('fetch', fetchMock)
+    vi.stubGlobal(
+      'fetch',
+      mockFetchRoutes({
+        'GET /api/settings': [jsonResponse(settingsSnapshot({ test: true }))],
+        'GET /api/software': [softwareNotConfigured()],
+        'POST /api/settings/test-connection': [
+          jsonResponse({ ok: false, kind: 'http-error', status: 401, body: 'Unauthorized: bad credentials' }),
+        ],
+      }),
+    )
 
     render(<App />)
     const testSection = await screen.findByRole('region', { name: 'Test' })
@@ -165,11 +218,14 @@ describe('App', () => {
   })
 
   it('shows an unambiguous fallback message for an http-error with an empty body', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(jsonResponse(settingsSnapshot({ test: true })))
-      .mockResolvedValueOnce(jsonResponse({ ok: false, kind: 'http-error', status: 500, body: '' }))
-    vi.stubGlobal('fetch', fetchMock)
+    vi.stubGlobal(
+      'fetch',
+      mockFetchRoutes({
+        'GET /api/settings': [jsonResponse(settingsSnapshot({ test: true }))],
+        'GET /api/software': [softwareNotConfigured()],
+        'POST /api/settings/test-connection': [jsonResponse({ ok: false, kind: 'http-error', status: 500, body: '' })],
+      }),
+    )
 
     render(<App />)
     const testSection = await screen.findByRole('region', { name: 'Test' })
@@ -182,11 +238,14 @@ describe('App', () => {
   })
 
   it('rejects a connection test for a since-unconfigured environment, with a clear message', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(jsonResponse(settingsSnapshot({ test: true })))
-      .mockResolvedValueOnce(jsonResponse({ error: 'NOT_CONFIGURED' }, false, 409))
-    vi.stubGlobal('fetch', fetchMock)
+    vi.stubGlobal(
+      'fetch',
+      mockFetchRoutes({
+        'GET /api/settings': [jsonResponse(settingsSnapshot({ test: true }))],
+        'GET /api/software': [softwareNotConfigured()],
+        'POST /api/settings/test-connection': [jsonResponse({ error: 'NOT_CONFIGURED' }, false, 409)],
+      }),
+    )
 
     render(<App />)
     const testSection = await screen.findByRole('region', { name: 'Test' })
@@ -199,11 +258,14 @@ describe('App', () => {
   })
 
   it('shows a clear timeout failure, distinct from a credential rejection', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(jsonResponse(settingsSnapshot({ test: true })))
-      .mockResolvedValueOnce(jsonResponse({ ok: false, kind: 'timeout' }))
-    vi.stubGlobal('fetch', fetchMock)
+    vi.stubGlobal(
+      'fetch',
+      mockFetchRoutes({
+        'GET /api/settings': [jsonResponse(settingsSnapshot({ test: true }))],
+        'GET /api/software': [softwareNotConfigured()],
+        'POST /api/settings/test-connection': [jsonResponse({ ok: false, kind: 'timeout' })],
+      }),
+    )
 
     render(<App />)
     const testSection = await screen.findByRole('region', { name: 'Test' })
@@ -216,13 +278,16 @@ describe('App', () => {
   })
 
   it('shows the raw network error message when EquipmentCloud is unreachable', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(jsonResponse(settingsSnapshot({ test: true })))
-      .mockResolvedValueOnce(
-        jsonResponse({ ok: false, kind: 'network-error', message: 'getaddrinfo ENOTFOUND eqcloud-test' }),
-      )
-    vi.stubGlobal('fetch', fetchMock)
+    vi.stubGlobal(
+      'fetch',
+      mockFetchRoutes({
+        'GET /api/settings': [jsonResponse(settingsSnapshot({ test: true }))],
+        'GET /api/software': [softwareNotConfigured()],
+        'POST /api/settings/test-connection': [
+          jsonResponse({ ok: false, kind: 'network-error', message: 'getaddrinfo ENOTFOUND eqcloud-test' }),
+        ],
+      }),
+    )
 
     render(<App />)
     const testSection = await screen.findByRole('region', { name: 'Test' })
@@ -232,5 +297,19 @@ describe('App', () => {
     expect(
       await within(testSection).findByText('Netzwerkfehler: getaddrinfo ENOTFOUND eqcloud-test'),
     ).toBeInTheDocument()
+  })
+
+  it('mounts the SoftwareCenter overview section alongside the environment cards', async () => {
+    vi.stubGlobal(
+      'fetch',
+      mockFetchRoutes({
+        'GET /api/settings': [jsonResponse(settingsSnapshot())],
+        'GET /api/software': [softwareNotConfigured()],
+      }),
+    )
+
+    render(<App />)
+
+    expect(await screen.findByRole('region', { name: 'SoftwareCenter-Übersicht' })).toBeInTheDocument()
   })
 })

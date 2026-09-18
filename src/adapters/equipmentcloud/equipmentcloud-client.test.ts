@@ -132,3 +132,266 @@ describe('EquipmentCloudClient', () => {
     expect(result).toEqual({ ok: false, kind: 'timeout' });
   });
 });
+
+function jsonResponse(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
+}
+
+describe('EquipmentCloudClient.listSoftware', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('aggregates the list with each item enriched via its per-item detail call', async () => {
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url === 'https://example.test/cloudconnect/api/softwarecenter/v1/sharedsoftware') {
+        return Promise.resolve(
+          jsonResponse({
+            items: [
+              { id: 155, name: 'MS Word', category: 'Office' },
+              { id: 156, name: 'Windows 10', category: 'Operating Systems' },
+            ],
+          }),
+        );
+      }
+      if (url === 'https://example.test/cloudconnect/api/softwarecenter/v1/sharedsoftware/155') {
+        return Promise.resolve(
+          jsonResponse({
+            items: [
+              {
+                id: 155,
+                name: 'MS Word',
+                category: 'Office',
+                description: 'Word processor',
+                versions: [{ id: 30, name: '2016' }],
+              },
+            ],
+          }),
+        );
+      }
+      if (url === 'https://example.test/cloudconnect/api/softwarecenter/v1/sharedsoftware/156') {
+        return Promise.resolve(
+          jsonResponse({
+            items: [{ id: 156, name: 'Windows 10', category: 'Operating Systems', description: 'OS', versions: [] }],
+          }),
+        );
+      }
+      throw new Error(`unexpected fetch to ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = new EquipmentCloudClient('https://example.test', CREDENTIALS);
+    const result = await client.listSoftware();
+
+    expect(result).toEqual({
+      ok: true,
+      items: [
+        { id: 155, name: 'MS Word', category: 'Office', description: 'Word processor', versions: [{ id: 30, name: '2016' }] },
+        { id: 156, name: 'Windows 10', category: 'Operating Systems', description: 'OS', versions: [] },
+      ],
+    });
+  });
+
+  it('follows controls[0].next across pages, aggregating all items, capped at 50 pages', async () => {
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url === 'https://example.test/cloudconnect/api/softwarecenter/v1/sharedsoftware') {
+        return Promise.resolve(
+          jsonResponse({
+            items: [{ id: 1, name: 'A', category: 'Cat' }],
+            controls: [{ next: 'https://example.test/page2' }],
+          }),
+        );
+      }
+      if (url === 'https://example.test/page2') {
+        return Promise.resolve(jsonResponse({ items: [{ id: 2, name: 'B', category: 'Cat' }] }));
+      }
+      if (url === 'https://example.test/cloudconnect/api/softwarecenter/v1/sharedsoftware/1') {
+        return Promise.resolve(jsonResponse({ items: [{ id: 1, name: 'A', category: 'Cat', description: '', versions: [] }] }));
+      }
+      if (url === 'https://example.test/cloudconnect/api/softwarecenter/v1/sharedsoftware/2') {
+        return Promise.resolve(jsonResponse({ items: [{ id: 2, name: 'B', category: 'Cat', description: '', versions: [] }] }));
+      }
+      throw new Error(`unexpected fetch to ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = new EquipmentCloudClient('https://example.test', CREDENTIALS);
+    const result = await client.listSoftware();
+
+    expect(result.ok).toBe(true);
+    expect(result.ok && result.items.map((item) => item.id)).toEqual([1, 2]);
+  });
+
+  it('surfaces the raw http-error when the list call is rejected', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('Unauthorized', { status: 401 })));
+
+    const client = new EquipmentCloudClient('https://example.test', CREDENTIALS);
+    const result = await client.listSoftware();
+
+    expect(result).toEqual({ ok: false, kind: 'http-error', status: 401, body: 'Unauthorized' });
+  });
+
+  it('surfaces a network error distinctly', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('getaddrinfo ENOTFOUND example.test')));
+
+    const client = new EquipmentCloudClient('https://example.test', CREDENTIALS);
+    const result = await client.listSoftware();
+
+    expect(result).toEqual({ ok: false, kind: 'network-error', message: 'getaddrinfo ENOTFOUND example.test' });
+  });
+
+  it('returns the failing detail call\'s error when one of several per-item detail calls fails', async () => {
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url === 'https://example.test/cloudconnect/api/softwarecenter/v1/sharedsoftware') {
+        return Promise.resolve(
+          jsonResponse({
+            items: [
+              { id: 155, name: 'MS Word', category: 'Office' },
+              { id: 156, name: 'Windows 10', category: 'Operating Systems' },
+            ],
+          }),
+        );
+      }
+      if (url === 'https://example.test/cloudconnect/api/softwarecenter/v1/sharedsoftware/155') {
+        return Promise.resolve(
+          jsonResponse({
+            items: [{ id: 155, name: 'MS Word', category: 'Office', description: 'Word processor', versions: [] }],
+          }),
+        );
+      }
+      if (url === 'https://example.test/cloudconnect/api/softwarecenter/v1/sharedsoftware/156') {
+        return Promise.resolve(new Response('Not Found', { status: 404 }));
+      }
+      throw new Error(`unexpected fetch to ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = new EquipmentCloudClient('https://example.test', CREDENTIALS);
+    const result = await client.listSoftware();
+
+    expect(result).toEqual({ ok: false, kind: 'http-error', status: 404, body: 'Not Found' });
+  });
+
+  it('returns an explicit http-error when a per-item detail call returns an empty items array', async () => {
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url === 'https://example.test/cloudconnect/api/softwarecenter/v1/sharedsoftware') {
+        return Promise.resolve(jsonResponse({ items: [{ id: 155, name: 'MS Word', category: 'Office' }] }));
+      }
+      if (url === 'https://example.test/cloudconnect/api/softwarecenter/v1/sharedsoftware/155') {
+        // Item was deleted between the list call and this detail call.
+        return Promise.resolve(jsonResponse({ items: [] }));
+      }
+      throw new Error(`unexpected fetch to ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = new EquipmentCloudClient('https://example.test', CREDENTIALS);
+    const result = await client.listSoftware();
+
+    expect(result.ok).toBe(false);
+    expect(result).toMatchObject({ ok: false, kind: 'http-error', status: 404 });
+  });
+
+  it('stops following controls[0].next after MAX_PAGES (50) pages instead of looping forever', async () => {
+    let pageCount = 0;
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url === 'https://example.test/cloudconnect/api/softwarecenter/v1/sharedsoftware' || url.startsWith('https://example.test/page')) {
+        pageCount++;
+        const currentPage = pageCount;
+        return Promise.resolve(
+          jsonResponse({
+            items: [{ id: currentPage, name: `Item ${currentPage}`, category: 'Cat' }],
+            // Always returns a next link — would loop forever without the MAX_PAGES cap.
+            controls: [{ next: `https://example.test/page${currentPage + 1}` }],
+          }),
+        );
+      }
+      // Per-item detail calls — respond with a matching empty-ish detail for any id.
+      return Promise.resolve(jsonResponse({ items: [{ id: 1, name: 'Item', category: 'Cat', description: '', versions: [] }] }));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = new EquipmentCloudClient('https://example.test', CREDENTIALS);
+    const result = await client.listSoftware();
+
+    expect(result.ok).toBe(true);
+    expect(result.ok && result.items).toHaveLength(50);
+    expect(pageCount).toBe(50);
+  });
+});
+
+describe('EquipmentCloudClient.listSets', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('maps each set state to its label via the releases lookup', async () => {
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url === 'https://example.test/cloudconnect/api/softwarecenter/v1/releases') {
+        return Promise.resolve(jsonResponse({ items: [{ id: 155, release_id: 'RELEASED', label: 'Released' }] }));
+      }
+      if (url === 'https://example.test/cloudconnect/api/softwarecenter/v1/sharedsets') {
+        return Promise.resolve(
+          jsonResponse({
+            items: [
+              { id: 1, name: 'Office Installation', category: 'Office Software', state: 'RELEASED' },
+              { id: 2, name: 'Draft Set', category: 'Misc', state: 'UNMAPPED_STATE' },
+            ],
+          }),
+        );
+      }
+      throw new Error(`unexpected fetch to ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = new EquipmentCloudClient('https://example.test', CREDENTIALS);
+    const result = await client.listSets();
+
+    expect(result).toEqual({
+      ok: true,
+      items: [
+        { id: 1, name: 'Office Installation', category: 'Office Software', state: 'RELEASED', stateLabel: 'Released' },
+        { id: 2, name: 'Draft Set', category: 'Misc', state: 'UNMAPPED_STATE', stateLabel: 'UNMAPPED_STATE' },
+      ],
+    });
+  });
+
+  it('surfaces a timeout distinctly when the releases lookup hangs', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(
+        (_url: string, init: { signal: AbortSignal }) =>
+          new Promise((_resolve, reject) => {
+            init.signal.addEventListener('abort', () => {
+              const error = new Error('This operation was aborted');
+              error.name = 'AbortError';
+              reject(error);
+            });
+          }),
+      ),
+    );
+
+    const client = new EquipmentCloudClient('https://example.test', CREDENTIALS, 10);
+    const result = await client.listSets();
+
+    expect(result).toEqual({ ok: false, kind: 'timeout' });
+  });
+
+  it('returns the sharedsets failure when releases succeeds but the sharedsets call is rejected', async () => {
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url === 'https://example.test/cloudconnect/api/softwarecenter/v1/releases') {
+        return Promise.resolve(jsonResponse({ items: [{ id: 155, release_id: 'RELEASED', label: 'Released' }] }));
+      }
+      if (url === 'https://example.test/cloudconnect/api/softwarecenter/v1/sharedsets') {
+        return Promise.resolve(new Response('Unauthorized', { status: 401 }));
+      }
+      throw new Error(`unexpected fetch to ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = new EquipmentCloudClient('https://example.test', CREDENTIALS);
+    const result = await client.listSets();
+
+    expect(result).toEqual({ ok: false, kind: 'http-error', status: 401, body: 'Unauthorized' });
+  });
+});

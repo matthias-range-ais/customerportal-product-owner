@@ -26,7 +26,42 @@ export type ConnectionCheckResult =
   | { ok: false; kind: 'network-error'; message: string }
   | { ok: false; kind: 'timeout' };
 
-/** Read-only EquipmentCloud connection-check port; reused by later epics. */
+/** The failure arm shared by every EquipmentCloud read — same shape as `ConnectionCheckResult`'s. */
+export type EquipmentCloudFailure = Exclude<ConnectionCheckResult, { ok: true }>;
+
+/** One version of a shared software item (Story 1.4). */
+export interface SoftwareVersion {
+  id: number;
+  name: string;
+}
+
+/** One `sharedsoftware` item, enriched with its per-item detail (`description` + `versions`). */
+export interface SoftwareItem {
+  id: number;
+  name: string;
+  category: string;
+  description: string;
+  versions: SoftwareVersion[];
+}
+
+/** One `sharedsets` item, with its raw release `state` and the label resolved via `GET .../releases`. */
+export interface SoftwareSetItem {
+  id: number;
+  name: string;
+  category: string;
+  state: string;
+  stateLabel: string;
+}
+
+export type SoftwareListResult = { ok: true; items: SoftwareItem[] } | EquipmentCloudFailure;
+
+export type SoftwareSetListResult = { ok: true; items: SoftwareSetItem[] } | EquipmentCloudFailure;
+
+/** Read-only EquipmentCloud port; reused by later epics. */
 export interface EquipmentCloudPort {
   checkConnection(): Promise<ConnectionCheckResult>;
+  /** All shared software (`sharedsoftware`), each enriched with its description and versions. */
+  listSoftware(): Promise<SoftwareListResult>;
+  /** All shared software sets (`sharedsets`), each with its release-state label resolved. */
+  listSets(): Promise<SoftwareSetListResult>;
 }

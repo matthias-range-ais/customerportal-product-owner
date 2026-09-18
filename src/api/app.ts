@@ -127,6 +127,29 @@ export async function buildApp(options: BuildAppOptions = {}) {
     return client.checkConnection();
   });
 
+  // No request body (unlike the POST routes above) — reads the module-level
+  // `activeEnvironment` directly, per Story 1.4's "Code Map" note.
+  app.get('/api/software', async (_request, reply) => {
+    if (!activeEnvironment) {
+      return reply.code(409).send({ error: 'NOT_CONFIGURED' });
+    }
+
+    const client = createEquipmentCloudClient(activeEnvironment, credentialsPort);
+    if (!client) {
+      return reply.code(409).send({ error: 'NOT_CONFIGURED' });
+    }
+
+    const [softwareResult, setsResult] = await Promise.all([client.listSoftware(), client.listSets()]);
+    if (!softwareResult.ok) {
+      return softwareResult;
+    }
+    if (!setsResult.ok) {
+      return setsResult;
+    }
+
+    return { software: softwareResult.items, sets: setsResult.items };
+  });
+
   await app.register(fastifyStatic, {
     root: frontendDist,
   });

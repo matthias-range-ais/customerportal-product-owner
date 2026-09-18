@@ -285,3 +285,54 @@ button:disabled {
 .form-message--success {
   color: var(--success);
 }
+
+.software-overview {
+  gap: 24px;
+}
+
+.table-block {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.table-block h3 {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-h);
+  margin: 0;
+}
+
+.table-scroll {
+  overflow-x: auto;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.data-table th,
+.data-table td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.data-table th {
+  color: var(--text-muted);
+  font-weight: 600;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.data-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.data-table-empty {
+  color: var(--text-muted);
+  font-style: italic;
+}

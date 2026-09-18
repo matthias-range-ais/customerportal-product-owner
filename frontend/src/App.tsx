@@ -1,4 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
+import { readErrorCode } from './api-utils.ts'
+import SoftwareOverview from './SoftwareOverview.tsx'
 
 type Environment = 'test' | 'prod'
 
@@ -37,15 +39,6 @@ type CredentialsForm = { username: string; password: string }
 const emptyForms: Record<Environment, CredentialsForm> = {
   test: { username: '', password: '' },
   prod: { username: '', password: '' },
-}
-
-async function readErrorCode(response: Response): Promise<string | undefined> {
-  try {
-    const body = await response.json()
-    return typeof body?.error === 'string' ? body.error : undefined
-  } catch {
-    return undefined
-  }
 }
 
 function App() {
@@ -306,6 +299,8 @@ function App() {
             )
           })}
       </div>
+
+      <SoftwareOverview />
     </main>
   )
 }

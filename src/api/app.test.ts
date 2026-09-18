@@ -463,3 +463,125 @@ describe('POST /api/settings/test-connection', () => {
     await app.close();
   });
 });
+
+function jsonResponse(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
+}
+
+describe('GET /api/software', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    if (existsSync(indexHtmlMoved)) {
+      renameSync(indexHtmlMoved, indexHtml);
+    }
+  });
+
+  it('returns NOT_CONFIGURED when no environment is active', async () => {
+    const app = await buildApp({ logger: false, credentialsPort: new InMemoryCredentialsPort() });
+
+    const response = await app.inject({ method: 'GET', url: '/api/software' });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toEqual({ error: 'NOT_CONFIGURED' });
+
+    await app.close();
+  });
+
+  it('returns NOT_CONFIGURED when the active environment has no stored credentials (createEquipmentCloudClient returns null)', async () => {
+    // Reports itself as configured (so buildApp activates it at startup) but returns no
+    // credentials — mirrors the equivalent `null`-client branch covered for test-connection.
+    class HasCredentialsButUnreadablePort implements CredentialsPort, CredentialsSource {
+      saveCredentials(): void {}
+      hasCredentials(): boolean {
+        return true;
+      }
+      getUsername(): string | null {
+        return 'alice';
+      }
+      getCredentials(): { username: string; password: string } | null {
+        return null;
+      }
+    }
+    const app = await buildApp({
+      logger: false,
+      credentialsPort: new HasCredentialsButUnreadablePort(),
+      initialEnvironment: 'test',
+    });
+
+    const response = await app.inject({ method: 'GET', url: '/api/software' });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toEqual({ error: 'NOT_CONFIGURED' });
+
+    await app.close();
+  });
+
+  it('returns the aggregated software and sets for the active environment', async () => {
+    const credentialsPort = new InMemoryCredentialsPort();
+    credentialsPort.saveCredentials('test', 'alice', 'secret');
+    const app = await buildApp({ logger: false, credentialsPort, initialEnvironment: 'test' });
+
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url.endsWith('/sharedsoftware')) {
+        return Promise.resolve(jsonResponse({ items: [{ id: 1, name: 'MS Word', category: 'Office' }] }));
+      }
+      if (url.endsWith('/sharedsoftware/1')) {
+        return Promise.resolve(
+          jsonResponse({ items: [{ id: 1, name: 'MS Word', category: 'Office', description: 'Word processor', versions: [] }] }),
+        );
+      }
+      if (url.endsWith('/releases')) {
+        return Promise.resolve(jsonResponse({ items: [{ id: 9, release_id: 'RELEASED', label: 'Released' }] }));
+      }
+      if (url.endsWith('/sharedsets')) {
+        return Promise.resolve(jsonResponse({ items: [{ id: 2, name: 'Office Set', category: 'Office', state: 'RELEASED' }] }));
+      }
+      throw new Error(`unexpected fetch to ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const response = await app.inject({ method: 'GET', url: '/api/software' });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      software: [{ id: 1, name: 'MS Word', category: 'Office', description: 'Word processor', versions: [] }],
+      sets: [{ id: 2, name: 'Office Set', category: 'Office', state: 'RELEASED', stateLabel: 'Released' }],
+    });
+
+    await app.close();
+  });
+
+  it('surfaces the raw EquipmentCloud error when the software list call is rejected', async () => {
+    const credentialsPort = new InMemoryCredentialsPort();
+    credentialsPort.saveCredentials('test', 'alice', 'wrong');
+    const app = await buildApp({ logger: false, credentialsPort, initialEnvironment: 'test' });
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('Unauthorized', { status: 401 })));
+
+    const response = await app.inject({ method: 'GET', url: '/api/software' });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ ok: false, kind: 'http-error', status: 401, body: 'Unauthorized' });
+
+    await app.close();
+  });
+
+  it('reports a network error distinctly when EquipmentCloud is unreachable', async () => {
+    const credentialsPort = new InMemoryCredentialsPort();
+    credentialsPort.saveCredentials('test', 'alice', 'secret');
+    const app = await buildApp({ logger: false, credentialsPort, initialEnvironment: 'test' });
+
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('getaddrinfo ENOTFOUND eqcloud-test')));
+
+    const response = await app.inject({ method: 'GET', url: '/api/software' });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      ok: false,
+      kind: 'network-error',
+      message: 'getaddrinfo ENOTFOUND eqcloud-test',
+    });
+
+    await app.close();
+  });
+});
