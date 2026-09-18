@@ -38,6 +38,17 @@ export class KeyringCredentialsAdapter implements CredentialsPort {
     return this.readStored(environment)?.username ?? null;
   }
 
+  /**
+   * Returns the raw stored username/password pair for an environment, or
+   * `null` if not configured. Deliberately **not** part of `CredentialsPort`
+   * (the domain port stays secret-free) — only adapter-layer code (namely the
+   * EquipmentCloud adapter's construction step, wired from the composition
+   * root in `src/api/`) may call this.
+   */
+  getCredentials(environment: Environment): { username: string; password: string } | null {
+    return this.readStored(environment);
+  }
+
   private readStored(environment: Environment): { username: string; password: string } | null {
     const entry = new Entry(this.service, environment);
     try {

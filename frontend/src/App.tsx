@@ -8,6 +8,23 @@ interface SettingsSnapshot {
   activeUsername: string | null
 }
 
+type ConnectionCheckResult =
+  | { ok: true }
+  | { ok: false; kind: 'http-error'; status: number; body: string }
+  | { ok: false; kind: 'network-error'; message: string }
+  | { ok: false; kind: 'timeout' }
+
+type TestConnectionState =
+  | { status: 'idle' }
+  | { status: 'loading' }
+  | { status: 'success' }
+  | { status: 'error'; message: string }
+
+const idleTestConnection: Record<Environment, TestConnectionState> = {
+  test: { status: 'idle' },
+  prod: { status: 'idle' },
+}
+
 const ENVIRONMENTS: Environment[] = ['test', 'prod']
 
 const ENVIRONMENT_LABELS: Record<Environment, string> = {
@@ -38,6 +55,7 @@ function App() {
   const [formErrors, setFormErrors] = useState<Record<Environment, string | null>>({ test: null, prod: null })
   const [formSuccess, setFormSuccess] = useState<Record<Environment, string | null>>({ test: null, prod: null })
   const [switchError, setSwitchError] = useState<string | null>(null)
+  const [testConnection, setTestConnection] = useState<Record<Environment, TestConnectionState>>(idleTestConnection)
 
   useEffect(() => {
     void loadSettings()
@@ -123,6 +141,54 @@ function App() {
     }
   }
 
+  async function handleTestConnection(environment: Environment) {
+    setTestConnection((prev) => ({ ...prev, [environment]: { status: 'loading' } }))
+
+    try {
+      const response = await fetch('/api/settings/test-connection', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ environment }),
+      })
+
+      if (!response.ok) {
+        const errorCode = await readErrorCode(response)
+        setTestConnection((prev) => ({
+          ...prev,
+          [environment]: {
+            status: 'error',
+            message:
+              errorCode === 'NOT_CONFIGURED'
+                ? `Umgebung "${ENVIRONMENT_LABELS[environment]}" ist nicht konfiguriert.`
+                : 'Verbindungstest fehlgeschlagen. Bitte erneut versuchen.',
+          },
+        }))
+        return
+      }
+
+      const result = (await response.json()) as ConnectionCheckResult
+
+      if (result.ok) {
+        setTestConnection((prev) => ({ ...prev, [environment]: { status: 'success' } }))
+        return
+      }
+
+      const message =
+        result.kind === 'http-error'
+          ? `EquipmentCloud-Fehler ${result.status}: ${result.body || '(kein Antworttext)'}`
+          : result.kind === 'timeout'
+            ? 'Zeitüberschreitung: keine Antwort von EquipmentCloud.'
+            : `Netzwerkfehler: ${result.message}`
+
+      setTestConnection((prev) => ({ ...prev, [environment]: { status: 'error', message } }))
+    } catch {
+      setTestConnection((prev) => ({
+        ...prev,
+        [environment]: { status: 'error', message: 'Verbindungstest fehlgeschlagen. Bitte erneut versuchen.' },
+      }))
+    }
+  }
+
   return (
     <main className="page">
       <header className="page-header">
@@ -154,6 +220,7 @@ function App() {
           ENVIRONMENTS.map((environment) => {
             const status = settings.environments[environment]
             const isActive = settings.active === environment
+            const connectionState = testConnection[environment]
 
             return (
               <section key={environment} className="card" aria-label={ENVIRONMENT_LABELS[environment]}>
@@ -212,6 +279,29 @@ function App() {
                     </button>
                   </div>
                 </form>
+
+                {status.configured && (
+                  <div className="connection-test">
+                    <div className="form-actions">
+                      <button
+                        type="button"
+                        className="button--secondary"
+                        onClick={() => void handleTestConnection(environment)}
+                        disabled={connectionState.status === 'loading'}
+                      >
+                        {connectionState.status === 'loading' ? 'Verbindung wird getestet…' : 'Verbindung testen'}
+                      </button>
+                    </div>
+                    {connectionState.status === 'success' && (
+                      <p className="form-message form-message--success">Verbindung erfolgreich.</p>
+                    )}
+                    {connectionState.status === 'error' && (
+                      <p className="form-message form-message--error" role="alert">
+                        {connectionState.message}
+                      </p>
+                    )}
+                  </div>
+                )}
               </section>
             )
           })}

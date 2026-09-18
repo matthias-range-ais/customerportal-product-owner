@@ -22,3 +22,9 @@
 - source_spec: `{project-root}/_bmad-output/implementation-artifacts/spec-1-2-store-equipmentcloud-credentials-securely-select-environment.md`
   summary: Introduce real app navigation (the settings screen should be one screen among several, not the entire app) once a second screen is needed.
   evidence: User feedback after manual testing — expected the settings screen to be a distinct dialog/screen, not the app's sole view. Accepted as fine for Story 1.2 (no navigation system existed to build on), but should be addressed properly starting with the first story that adds a second screen (at latest Story 1.4, SoftwareCenter overview).
+
+## Deferred from: code review of spec-1-3-verify-the-equipmentcloud-connection.md (2026-09-18)
+
+- source_spec: `{project-root}/_bmad-output/implementation-artifacts/spec-1-3-verify-the-equipmentcloud-connection.md`
+  summary: Distinguish a locked/inaccessible Windows credential store from a genuinely unconfigured environment in `KeyringCredentialsAdapter`, so `/api/settings/test-connection` (and other routes built on `readStored`) don't tell the Product Owner an environment "is not configured" when it actually is, just momentarily inaccessible.
+  evidence: Confirmed by reading `keyring-credentials-adapter.ts` — `readStored`'s try/catch (introduced in Story 1.2) treats any read failure the same as "no entry found." Pre-existing behavior from Story 1.2, unchanged by this diff, just newly reachable (and more visibly misleading) through the new connection-test route.

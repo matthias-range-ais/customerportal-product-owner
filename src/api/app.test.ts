@@ -1,8 +1,9 @@
 import { existsSync, renameSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildApp } from './app.js';
+import type { CredentialsSource } from '../adapters/equipmentcloud/equipmentcloud-port.js';
 import type { CredentialsPort, Environment } from '../domain/credentials-port.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -12,7 +13,7 @@ const indexHtmlMoved = `${indexHtml}.movedForTest`;
 
 // In-memory test double — no test in this file should ever touch the real
 // Windows Credential Manager via the default KeyringCredentialsAdapter.
-class InMemoryCredentialsPort implements CredentialsPort {
+class InMemoryCredentialsPort implements CredentialsPort, CredentialsSource {
   private readonly store = new Map<Environment, { username: string; password: string }>();
 
   saveCredentials(environment: Environment, username: string, password: string): void {
@@ -26,10 +27,14 @@ class InMemoryCredentialsPort implements CredentialsPort {
   getUsername(environment: Environment): string | null {
     return this.store.get(environment)?.username ?? null;
   }
+
+  getCredentials(environment: Environment): { username: string; password: string } | null {
+    return this.store.get(environment) ?? null;
+  }
 }
 
 // Stand-in that always fails the write, for exercising the storage-error path.
-class FailingCredentialsPort implements CredentialsPort {
+class FailingCredentialsPort implements CredentialsPort, CredentialsSource {
   saveCredentials(): never {
     throw new Error('store is locked');
   }
@@ -39,6 +44,10 @@ class FailingCredentialsPort implements CredentialsPort {
   }
 
   getUsername(): string | null {
+    return null;
+  }
+
+  getCredentials(): { username: string; password: string } | null {
     return null;
   }
 }
@@ -324,6 +333,132 @@ describe('settings routes', () => {
 
     expect(response.statusCode).toBe(400);
     expect(response.json()).toEqual({ error: 'INVALID_ENVIRONMENT' });
+
+    await app.close();
+  });
+});
+
+describe('POST /api/settings/test-connection', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    if (existsSync(indexHtmlMoved)) {
+      renameSync(indexHtmlMoved, indexHtml);
+    }
+  });
+
+  it('rejects an unknown environment', async () => {
+    const app = await buildApp({ logger: false, credentialsPort: new InMemoryCredentialsPort() });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/settings/test-connection',
+      payload: { environment: 'staging' },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toEqual({ error: 'INVALID_ENVIRONMENT' });
+
+    await app.close();
+  });
+
+  it('rejects checking an environment with no stored credentials', async () => {
+    const app = await buildApp({ logger: false, credentialsPort: new InMemoryCredentialsPort() });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/settings/test-connection',
+      payload: { environment: 'test' },
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toEqual({ error: 'NOT_CONFIGURED' });
+
+    await app.close();
+  });
+
+  it('reports success and calls the prod base URL with a Basic Auth header built from stored credentials', async () => {
+    const credentialsPort = new InMemoryCredentialsPort();
+    credentialsPort.saveCredentials('prod', 'alice', 'secret');
+    const app = await buildApp({ logger: false, credentialsPort });
+
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/settings/test-connection',
+      payload: { environment: 'prod' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ ok: true });
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('https://eqcloud.kontron-ais.com/C1681906/cloudconnect/api/softwarecenter/v1/ping');
+    expect(init.headers.Authorization).toBe(`Basic ${Buffer.from('alice:secret').toString('base64')}`);
+
+    await app.close();
+  });
+
+  it('surfaces the raw EquipmentCloud error status and body when credentials are rejected', async () => {
+    const credentialsPort = new InMemoryCredentialsPort();
+    credentialsPort.saveCredentials('test', 'alice', 'wrong');
+    const app = await buildApp({ logger: false, credentialsPort });
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(new Response('Unauthorized: bad credentials', { status: 401 })),
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/settings/test-connection',
+      payload: { environment: 'test' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ ok: false, kind: 'http-error', status: 401, body: 'Unauthorized: bad credentials' });
+
+    await app.close();
+  });
+
+  it('reports a network error distinctly from an EquipmentCloud error response', async () => {
+    const credentialsPort = new InMemoryCredentialsPort();
+    credentialsPort.saveCredentials('test', 'alice', 'secret');
+    const app = await buildApp({ logger: false, credentialsPort });
+
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('getaddrinfo ENOTFOUND eqcloud-test')));
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/settings/test-connection',
+      payload: { environment: 'test' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      ok: false,
+      kind: 'network-error',
+      message: 'getaddrinfo ENOTFOUND eqcloud-test',
+    });
+
+    await app.close();
+  });
+
+  it('never includes the raw password in the response', async () => {
+    const credentialsPort = new InMemoryCredentialsPort();
+    credentialsPort.saveCredentials('test', 'alice', 'super-secret-password');
+    const app = await buildApp({ logger: false, credentialsPort });
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status: 200 })));
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/settings/test-connection',
+      payload: { environment: 'test' },
+    });
+
+    expect(JSON.stringify(response.json())).not.toContain('super-secret-password');
 
     await app.close();
   });

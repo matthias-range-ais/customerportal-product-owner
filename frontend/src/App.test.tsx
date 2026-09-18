@@ -117,4 +117,120 @@ describe('App', () => {
     ).toBeInTheDocument()
     expect(screen.getByTestId('active-environment')).toHaveTextContent('Aktive Umgebung: keine')
   })
+
+  it('does not offer the "Verbindung testen" action for an unconfigured environment', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(settingsSnapshot())))
+
+    render(<App />)
+    const testSection = await screen.findByRole('region', { name: 'Test' })
+
+    expect(within(testSection).queryByRole('button', { name: 'Verbindung testen' })).not.toBeInTheDocument()
+  })
+
+  it('shows a clear success indicator when the connection check succeeds', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(settingsSnapshot({ test: true })))
+      .mockResolvedValueOnce(jsonResponse({ ok: true }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<App />)
+    const testSection = await screen.findByRole('region', { name: 'Test' })
+
+    fireEvent.click(within(testSection).getByRole('button', { name: 'Verbindung testen' }))
+
+    expect(await within(testSection).findByText('Verbindung erfolgreich.')).toBeInTheDocument()
+    const [, checkCall] = fetchMock.mock.calls
+    expect(checkCall[0]).toBe('/api/settings/test-connection')
+    expect(JSON.parse(checkCall[1].body)).toEqual({ environment: 'test' })
+  })
+
+  it('shows the raw EquipmentCloud error when credentials are rejected', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(settingsSnapshot({ test: true })))
+      .mockResolvedValueOnce(
+        jsonResponse({ ok: false, kind: 'http-error', status: 401, body: 'Unauthorized: bad credentials' }),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<App />)
+    const testSection = await screen.findByRole('region', { name: 'Test' })
+
+    fireEvent.click(within(testSection).getByRole('button', { name: 'Verbindung testen' }))
+
+    expect(
+      await within(testSection).findByText('EquipmentCloud-Fehler 401: Unauthorized: bad credentials'),
+    ).toBeInTheDocument()
+  })
+
+  it('shows an unambiguous fallback message for an http-error with an empty body', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(settingsSnapshot({ test: true })))
+      .mockResolvedValueOnce(jsonResponse({ ok: false, kind: 'http-error', status: 500, body: '' }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<App />)
+    const testSection = await screen.findByRole('region', { name: 'Test' })
+
+    fireEvent.click(within(testSection).getByRole('button', { name: 'Verbindung testen' }))
+
+    expect(
+      await within(testSection).findByText('EquipmentCloud-Fehler 500: (kein Antworttext)'),
+    ).toBeInTheDocument()
+  })
+
+  it('rejects a connection test for a since-unconfigured environment, with a clear message', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(settingsSnapshot({ test: true })))
+      .mockResolvedValueOnce(jsonResponse({ error: 'NOT_CONFIGURED' }, false, 409))
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<App />)
+    const testSection = await screen.findByRole('region', { name: 'Test' })
+
+    fireEvent.click(within(testSection).getByRole('button', { name: 'Verbindung testen' }))
+
+    expect(
+      await within(testSection).findByText('Umgebung "Test" ist nicht konfiguriert.'),
+    ).toBeInTheDocument()
+  })
+
+  it('shows a clear timeout failure, distinct from a credential rejection', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(settingsSnapshot({ test: true })))
+      .mockResolvedValueOnce(jsonResponse({ ok: false, kind: 'timeout' }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<App />)
+    const testSection = await screen.findByRole('region', { name: 'Test' })
+
+    fireEvent.click(within(testSection).getByRole('button', { name: 'Verbindung testen' }))
+
+    expect(
+      await within(testSection).findByText('Zeitüberschreitung: keine Antwort von EquipmentCloud.'),
+    ).toBeInTheDocument()
+  })
+
+  it('shows the raw network error message when EquipmentCloud is unreachable', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(settingsSnapshot({ test: true })))
+      .mockResolvedValueOnce(
+        jsonResponse({ ok: false, kind: 'network-error', message: 'getaddrinfo ENOTFOUND eqcloud-test' }),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<App />)
+    const testSection = await screen.findByRole('region', { name: 'Test' })
+
+    fireEvent.click(within(testSection).getByRole('button', { name: 'Verbindung testen' }))
+
+    expect(
+      await within(testSection).findByText('Netzwerkfehler: getaddrinfo ENOTFOUND eqcloud-test'),
+    ).toBeInTheDocument()
+  })
 })

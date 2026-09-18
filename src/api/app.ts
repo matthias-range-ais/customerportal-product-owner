@@ -4,6 +4,8 @@ import { fileURLToPath } from 'node:url';
 import Fastify from 'fastify';
 import fastifyStatic from '@fastify/static';
 import { KeyringCredentialsAdapter } from '../adapters/credentials/keyring-credentials-adapter.js';
+import { createEquipmentCloudClient } from '../adapters/equipmentcloud/equipmentcloud-client.js';
+import type { CredentialsSource } from '../adapters/equipmentcloud/equipmentcloud-port.js';
 import { isEnvironment, type CredentialsPort, type Environment } from '../domain/credentials-port.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -20,8 +22,13 @@ interface SettingsSnapshot {
 
 export interface BuildAppOptions {
   logger?: boolean;
-  /** Injectable for tests — defaults to the real Windows-Credential-Manager-backed adapter. */
-  credentialsPort?: CredentialsPort;
+  /**
+   * Injectable for tests — defaults to the real Windows-Credential-Manager-backed
+   * adapter. Also required to implement `CredentialsSource` (raw credential read),
+   * used only to construct the EquipmentCloud client for `/api/settings/test-connection`;
+   * the domain-facing `CredentialsPort` itself never gains this capability.
+   */
+  credentialsPort?: CredentialsPort & CredentialsSource;
   /**
    * Environment to try to make active at startup (from `EQUIPMENTCLOUD_ENV`, default `'prod'`).
    * Only takes effect if that environment already has stored credentials — otherwise no
@@ -99,6 +106,25 @@ export async function buildApp(options: BuildAppOptions = {}) {
     activeEnvironment = environment;
 
     return settingsSnapshot();
+  });
+
+  app.post<{ Body: { environment?: unknown } }>('/api/settings/test-connection', async (request, reply) => {
+    const body = request.body ?? {};
+    const { environment } = body;
+
+    if (!isEnvironment(environment)) {
+      return reply.code(400).send({ error: 'INVALID_ENVIRONMENT' });
+    }
+
+    // Raw credentials are read only inside createEquipmentCloudClient (the
+    // EquipmentCloud adapter's construction step) — this handler never sees
+    // them, only the resulting client or `null`.
+    const client = createEquipmentCloudClient(environment, credentialsPort);
+    if (!client) {
+      return reply.code(409).send({ error: 'NOT_CONFIGURED' });
+    }
+
+    return client.checkConnection();
   });
 
   await app.register(fastifyStatic, {
