@@ -14,6 +14,7 @@
     "build": "npm run build --workspace frontend && tsc -p tsconfig.json",
     "start": "npm run build && node dist/api/server.js",
     "dev": "tsx watch src/api/server.ts",
+    "dev:full": "npm run build --workspace frontend && concurrently -n backend,frontend -c blue,green \"npm run dev\" \"npm run watch --workspace frontend\"",
     "pretest": "npm run build --workspace frontend",
     "test": "vitest run && npm run test --workspace frontend"
   },
@@ -24,6 +25,7 @@
   },
   "devDependencies": {
     "@types/node": "^24.13.5",
+    "concurrently": "^10.0.5",
     "tsx": "^4.23.13",
     "typescript": "~6.0.2",
     "vitest": "^5.0.1"
