@@ -222,6 +222,38 @@ describe('EquipmentCloudClient.listSoftware', () => {
     expect(result.ok && result.items.map((item) => item.id)).toEqual([1, 2]);
   });
 
+  it('stops pagination on a page with no `items` at all, even when `controls.next` is still present', async () => {
+    // Reproduces the real EquipmentCloud API: a page past the last page of real data comes back
+    // with only a `controls` block and no `items` key, not an empty `items` array.
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url === 'https://example.test/cloudconnect/api/softwarecenter/v1/sharedsoftware') {
+        return Promise.resolve(
+          jsonResponse({
+            items: [{ id: 1, name: 'A', category: 'Cat' }],
+            controls: [{ next: 'https://example.test/page2' }],
+          }),
+        );
+      }
+      if (url === 'https://example.test/page2') {
+        return Promise.resolve(
+          jsonResponse({ controls: [{ first: 'x', next: 'https://example.test/page3', prev: 'x' }] }),
+        );
+      }
+      if (url === 'https://example.test/cloudconnect/api/softwarecenter/v1/sharedsoftware/1') {
+        return Promise.resolve(jsonResponse({ items: [{ id: 1, name: 'A', category: 'Cat', description: '', versions: [] }] }));
+      }
+      throw new Error(`unexpected fetch to ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = new EquipmentCloudClient('https://example.test', CREDENTIALS);
+    const result = await client.listSoftware();
+
+    expect(result.ok).toBe(true);
+    expect(result.ok && result.items.map((item) => item.id)).toEqual([1]);
+    expect(fetchMock.mock.calls.map(([url]) => url)).not.toContainEqual('https://example.test/page3');
+  });
+
   it('surfaces the raw http-error when the list call is rejected', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('Unauthorized', { status: 401 })));
 

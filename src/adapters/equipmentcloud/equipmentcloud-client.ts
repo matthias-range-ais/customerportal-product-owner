@@ -128,7 +128,7 @@ export class EquipmentCloudClient implements EquipmentCloudPort {
       }
 
       const base = listResult.data[index];
-      const detail = detailResult.data.items[0];
+      const detail = detailResult.data.items?.[0];
       if (!detail) {
         // Item deleted between the list call and this detail call — surface it as an
         // explicit failure rather than silently defaulting to an empty description/versions.
@@ -213,7 +213,12 @@ export class EquipmentCloudClient implements EquipmentCloudPort {
     }
   }
 
-  /** Follows `controls[0].next` (per the API's pagination shape) up to `MAX_PAGES`, aggregating all items. */
+  /**
+   * Follows `controls[0].next` (per the API's pagination shape) up to `MAX_PAGES`, aggregating
+   * all items. The live API emits a `next` link even past the last page of real data — that page
+   * comes back with no `items` at all rather than an empty array — so a page with no items ends
+   * pagination regardless of whether `next` is still present.
+   */
   private async fetchAllPages<T>(initialUrl: string): Promise<FetchResult<T[]>> {
     const allItems: T[] = [];
     let url: string | undefined = initialUrl;
@@ -225,7 +230,12 @@ export class EquipmentCloudClient implements EquipmentCloudPort {
         return pageResult;
       }
 
-      allItems.push(...pageResult.data.items);
+      const pageItems = pageResult.data.items ?? [];
+      if (pageItems.length === 0) {
+        break;
+      }
+
+      allItems.push(...pageItems);
       url = pageResult.data.controls?.[0]?.next;
       pageCount++;
     }
