@@ -14,10 +14,12 @@ describe('SoftwareOverview', () => {
   it('shows a hint instead of a table when no environment is active', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ error: 'NOT_CONFIGURED' }, false, 409)))
 
-    render(<SoftwareOverview />)
+    render(<SoftwareOverview activeEnvironment={null} />)
 
     expect(
-      await screen.findByText('Keine aktive Umgebung ausgewählt. Bitte zuerst eine Umgebung konfigurieren und als aktiv auswählen.'),
+      await screen.findByText(
+        'Keine aktive Umgebung ausgewählt. Bitte über "Einstellungen" zuerst eine Umgebung konfigurieren und als aktiv auswählen.',
+      ),
     ).toBeInTheDocument()
   })
 
@@ -34,7 +36,7 @@ describe('SoftwareOverview', () => {
       ),
     )
 
-    render(<SoftwareOverview />)
+    render(<SoftwareOverview activeEnvironment="test" />)
 
     expect(await screen.findByText('MS Word')).toBeInTheDocument()
     expect(screen.getByText('Word processor')).toBeInTheDocument()
@@ -46,7 +48,7 @@ describe('SoftwareOverview', () => {
   it('shows a placeholder row when a table has no items', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ software: [], sets: [] })))
 
-    render(<SoftwareOverview />)
+    render(<SoftwareOverview activeEnvironment="test" />)
 
     expect(await screen.findByText('Keine Software vorhanden.')).toBeInTheDocument()
     expect(screen.getByText('Keine Sets vorhanden.')).toBeInTheDocument()
@@ -58,7 +60,7 @@ describe('SoftwareOverview', () => {
       vi.fn().mockResolvedValue(jsonResponse({ ok: false, kind: 'http-error', status: 401, body: 'Unauthorized' })),
     )
 
-    render(<SoftwareOverview />)
+    render(<SoftwareOverview activeEnvironment="test" />)
 
     expect(await screen.findByText('EquipmentCloud-Fehler 401: Unauthorized')).toBeInTheDocument()
   })
@@ -66,7 +68,7 @@ describe('SoftwareOverview', () => {
   it('shows a clear timeout failure, distinct from a credential rejection', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ ok: false, kind: 'timeout' })))
 
-    render(<SoftwareOverview />)
+    render(<SoftwareOverview activeEnvironment="test" />)
 
     expect(await screen.findByText('Zeitüberschreitung: keine Antwort von EquipmentCloud.')).toBeInTheDocument()
   })
@@ -77,9 +79,30 @@ describe('SoftwareOverview', () => {
       vi.fn().mockResolvedValue(jsonResponse({ ok: false, kind: 'network-error', message: 'getaddrinfo ENOTFOUND eqcloud-test' })),
     )
 
-    render(<SoftwareOverview />)
+    render(<SoftwareOverview activeEnvironment="test" />)
 
     const overview = await screen.findByRole('region', { name: 'SoftwareCenter-Übersicht' })
     expect(within(overview).getByText('Netzwerkfehler: getaddrinfo ENOTFOUND eqcloud-test')).toBeInTheDocument()
+  })
+
+  it('refetches when the active environment changes', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ error: 'NOT_CONFIGURED' }, false, 409))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          software: [{ id: 1, name: 'MS Word', category: 'Office', description: '', versions: [] }],
+          sets: [],
+        }),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { rerender } = render(<SoftwareOverview activeEnvironment={null} />)
+    await screen.findByText(/Keine aktive Umgebung ausgewählt/)
+
+    rerender(<SoftwareOverview activeEnvironment="test" />)
+
+    expect(await screen.findByText('MS Word')).toBeInTheDocument()
+    expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 })

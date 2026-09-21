@@ -324,6 +324,29 @@ describe('EquipmentCloudClient.listSoftware', () => {
     expect(result).toMatchObject({ ok: false, kind: 'http-error', status: 404 });
   });
 
+  it('normalizes a missing/null category to an empty string instead of passing it through', async () => {
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url === 'https://example.test/cloudconnect/api/softwarecenter/v1/sharedsoftware') {
+        return Promise.resolve(jsonResponse({ items: [{ id: 1, name: 'Uncategorized Tool', category: null }] }));
+      }
+      if (url === 'https://example.test/cloudconnect/api/softwarecenter/v1/sharedsoftware/1') {
+        return Promise.resolve(
+          jsonResponse({ items: [{ id: 1, name: 'Uncategorized Tool', description: '', versions: [] }] }),
+        );
+      }
+      throw new Error(`unexpected fetch to ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = new EquipmentCloudClient('https://example.test', CREDENTIALS);
+    const result = await client.listSoftware();
+
+    expect(result).toEqual({
+      ok: true,
+      items: [{ id: 1, name: 'Uncategorized Tool', category: '', description: '', versions: [] }],
+    });
+  });
+
   it('stops following controls[0].next after MAX_PAGES (50) pages instead of looping forever', async () => {
     let pageCount = 0;
     const fetchMock = vi.fn().mockImplementation((url: string) => {
@@ -425,5 +448,30 @@ describe('EquipmentCloudClient.listSets', () => {
     const result = await client.listSets();
 
     expect(result).toEqual({ ok: false, kind: 'http-error', status: 401, body: 'Unauthorized' });
+  });
+
+  it('normalizes a missing/null category to an empty string instead of passing it through', async () => {
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url === 'https://example.test/cloudconnect/api/softwarecenter/v1/releases') {
+        return Promise.resolve(jsonResponse({ items: [] }));
+      }
+      if (url === 'https://example.test/cloudconnect/api/softwarecenter/v1/sharedsets') {
+        return Promise.resolve(
+          jsonResponse({
+            items: [{ id: 1, name: 'Uncategorized Set', category: null, state: 'DRAFT' }],
+          }),
+        );
+      }
+      throw new Error(`unexpected fetch to ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = new EquipmentCloudClient('https://example.test', CREDENTIALS);
+    const result = await client.listSets();
+
+    expect(result).toEqual({
+      ok: true,
+      items: [{ id: 1, name: 'Uncategorized Set', category: '', state: 'DRAFT', stateLabel: 'DRAFT' }],
+    });
   });
 });

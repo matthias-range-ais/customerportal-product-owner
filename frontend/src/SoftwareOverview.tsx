@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { readErrorCode } from './api-utils.ts'
+import type { Environment } from './settings-types.ts'
 
 interface SoftwareVersion {
   id: number
@@ -54,14 +55,25 @@ function failureMessage(failure: EquipmentCloudFailure): string {
   return `Netzwerkfehler: ${failure.message}`
 }
 
-function SoftwareOverview() {
+interface SoftwareOverviewProps {
+  // Refetches whenever this changes (e.g. the Product Owner switches the active
+  // environment in the settings dialog), so the overview never shows stale data.
+  activeEnvironment: Environment | null
+}
+
+function SoftwareOverview({ activeEnvironment }: SoftwareOverviewProps) {
   const [state, setState] = useState<OverviewState>({ status: 'loading' })
+  // Bumped at the start of each `load()` call so a response for a since-superseded request
+  // (e.g. the active environment changed again before this one resolved) can't overwrite
+  // newer state — only the response whose token still matches the latest call applies.
+  const requestIdRef = useRef(0)
 
   useEffect(() => {
     void load()
-  }, [])
+  }, [activeEnvironment])
 
   async function load() {
+    const requestId = ++requestIdRef.current
     setState({ status: 'loading' })
 
     try {
@@ -69,6 +81,9 @@ function SoftwareOverview() {
 
       if (!response.ok) {
         const errorCode = await readErrorCode(response)
+        if (requestId !== requestIdRef.current) {
+          return
+        }
         if (errorCode === 'NOT_CONFIGURED') {
           setState({ status: 'not-configured' })
         } else {
@@ -78,6 +93,9 @@ function SoftwareOverview() {
       }
 
       const body = await response.json()
+      if (requestId !== requestIdRef.current) {
+        return
+      }
 
       if (isEquipmentCloudFailure(body)) {
         setState({ status: 'error', message: failureMessage(body) })
@@ -86,6 +104,9 @@ function SoftwareOverview() {
 
       setState({ status: 'success', data: body as SoftwareOverviewData })
     } catch {
+      if (requestId !== requestIdRef.current) {
+        return
+      }
       setState({ status: 'error', message: 'SoftwareCenter-Daten konnten nicht geladen werden.' })
     }
   }
@@ -100,7 +121,8 @@ function SoftwareOverview() {
 
       {state.status === 'not-configured' && (
         <p className="banner" role="alert">
-          Keine aktive Umgebung ausgewählt. Bitte zuerst eine Umgebung konfigurieren und als aktiv auswählen.
+          Keine aktive Umgebung ausgewählt. Bitte über "Einstellungen" zuerst eine Umgebung konfigurieren und als
+          aktiv auswählen.
         </p>
       )}
 

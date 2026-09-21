@@ -28,3 +28,15 @@
 - source_spec: `{project-root}/_bmad-output/implementation-artifacts/spec-1-3-verify-the-equipmentcloud-connection.md`
   summary: Distinguish a locked/inaccessible Windows credential store from a genuinely unconfigured environment in `KeyringCredentialsAdapter`, so `/api/settings/test-connection` (and other routes built on `readStored`) don't tell the Product Owner an environment "is not configured" when it actually is, just momentarily inaccessible.
   evidence: Confirmed by reading `keyring-credentials-adapter.ts` — `readStored`'s try/catch (introduced in Story 1.2) treats any read failure the same as "no entry found." Pre-existing behavior from Story 1.2, unchanged by this diff, just newly reachable (and more visibly misleading) through the new connection-test route.
+
+## Deferred from: bmad-build multi-goal split (2026-09-21)
+
+- source_spec: none
+  summary: Add search/filter and category-grouping to the Software & Sets overview tables, plus a "Datum" (`updated_on`) column for Sets.
+  evidence: Found already implemented (uncommitted) in `SoftwareOverview.tsx` alongside the Settings-dialog extraction. It touches a different area (the overview tables, not settings/environment switching) and is independently shippable, so it was split out — the current intent was narrowed to the Settings dialog goal only.
+
+## Deferred from: code review of spec-settings-dialog.md (2026-09-21)
+
+- source_spec: `{project-root}/_bmad-output/implementation-artifacts/spec-settings-dialog.md`
+  summary: Add `.claude/settings.local.json` (or a broader `.claude/*.local.json` pattern) to `.gitignore` — it's a per-machine Claude Code plugin setting, not project content.
+  evidence: Confirmed it was already an untracked file (`?? .claude/`) in the repo's `git status` before this story's work began; this review's own diff-staging step (`git add -N .`) is what first surfaced it as "new" in a diff. Pre-existing repo-hygiene gap, not caused by this story.

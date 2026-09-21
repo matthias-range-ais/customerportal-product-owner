@@ -29,9 +29,22 @@ interface ListPage<T> {
   controls?: Array<{ first?: string; next?: string; prev?: string }>;
 }
 
-type RawSoftwareListItem = { id: number; name: string; category: string };
-type RawSoftwareDetailItem = { id: number; name: string; category: string; description?: string; versions?: SoftwareVersion[] };
-type RawSoftwareSetItem = { id: number; name: string; category: string; state: string };
+// `category` is typed nullable: the live API omits or nulls it for uncategorized items,
+// unlike openapi_equipmentcloud_preview.yaml's documented (always-present) shape.
+type RawSoftwareListItem = { id: number; name: string; category: string | null | undefined };
+type RawSoftwareDetailItem = {
+  id: number;
+  name: string;
+  category: string;
+  description?: string;
+  versions?: SoftwareVersion[];
+};
+type RawSoftwareSetItem = {
+  id: number;
+  name: string;
+  category: string | null | undefined;
+  state: string;
+};
 type RawReleaseItem = { release_id: string; label: string };
 
 type FetchResult<T> = { ok: true; data: T } | EquipmentCloudFailure;
@@ -142,7 +155,7 @@ export class EquipmentCloudClient implements EquipmentCloudPort {
       items.push({
         id: base.id,
         name: base.name,
-        category: base.category,
+        category: base.category ?? '',
         description: detail.description ?? '',
         versions: detail.versions ?? [],
       });
@@ -171,7 +184,7 @@ export class EquipmentCloudClient implements EquipmentCloudPort {
     const items: SoftwareSetItem[] = setsResult.data.map((set) => ({
       id: set.id,
       name: set.name,
-      category: set.category,
+      category: set.category ?? '',
       state: set.state,
       stateLabel: labelByState.get(set.state) ?? set.state,
     }));

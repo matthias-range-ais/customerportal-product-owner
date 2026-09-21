@@ -99,6 +99,13 @@ code {
   gap: 12px;
 }
 
+.page-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
 .page-header h1 {
   font-size: 28px;
   font-weight: 600;
@@ -335,4 +342,41 @@ button:disabled {
 .data-table-empty {
   color: var(--text-muted);
   font-style: italic;
+}
+
+.settings-dialog {
+  width: min(560px, calc(100vw - 48px));
+  max-height: min(80vh, 720px);
+  padding: 0;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--bg);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+
+.settings-dialog::backdrop {
+  background: rgba(15, 23, 42, 0.45);
+}
+
+/* Carries the padding the dialog element itself used to have — kept off the
+   `<dialog>` box so a click anywhere in the visible area lands on this wrapper
+   (or a descendant), never on the dialog element itself. That keeps the
+   dialog's own backdrop-click-to-close check (`event.target === dialogRef.current`)
+   from also firing for clicks inside what used to be the padding gutter. */
+.dialog-content {
+  padding: 24px;
+}
+
+.dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.dialog-header h2 {
+  font-size: 20px;
 }
