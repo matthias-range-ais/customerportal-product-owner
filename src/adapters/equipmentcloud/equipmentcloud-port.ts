@@ -51,6 +51,7 @@ export interface SoftwareSetItem {
   category: string;
   state: string;
   stateLabel: string;
+  updatedOn: string;
 }
 
 export type SoftwareListResult = { ok: true; items: SoftwareItem[] } | EquipmentCloudFailure;

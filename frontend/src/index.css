@@ -344,6 +344,68 @@ button:disabled {
   font-style: italic;
 }
 
+.filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.filter-input {
+  font: inherit;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text-h);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.filter-input:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-bg);
+}
+
+input[type='search'].filter-input {
+  flex: 1;
+  min-width: 200px;
+}
+
+.category-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.category-group {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+
+.category-group summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--text-h);
+  list-style: none;
+}
+
+.category-group summary::-webkit-details-marker {
+  display: none;
+}
+
+.category-group[open] summary {
+  color: var(--accent);
+  margin-bottom: 10px;
+}
+
+.category-count {
+  font-weight: 400;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
 .settings-dialog {
   width: min(560px, calc(100vw - 48px));
   max-height: min(80vh, 720px);

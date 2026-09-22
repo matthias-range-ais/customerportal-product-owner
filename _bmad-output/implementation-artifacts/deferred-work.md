@@ -40,3 +40,12 @@
 - source_spec: `{project-root}/_bmad-output/implementation-artifacts/spec-settings-dialog.md`
   summary: Add `.claude/settings.local.json` (or a broader `.claude/*.local.json` pattern) to `.gitignore` — it's a per-machine Claude Code plugin setting, not project content.
   evidence: Confirmed it was already an untracked file (`?? .claude/`) in the repo's `git status` before this story's work began; this review's own diff-staging step (`git add -N .`) is what first surfaced it as "new" in a diff. Pre-existing repo-hygiene gap, not caused by this story.
+
+## Deferred from: code review of spec-software-overview-search-filter.md (2026-09-22)
+
+- source_spec: `{project-root}/_bmad-output/implementation-artifacts/spec-software-overview-search-filter.md`
+  summary: Make the Sets table sortable by the new "Datum" column (currently only sorted by name within each category group).
+  evidence: Flagged during review as a reasonable enhancement now that the column exists, but the deferred-work item this story implements only asked for the column to be added, not for sortability — not part of this spec's Intent or Acceptance Criteria.
+- source_spec: `{project-root}/_bmad-output/implementation-artifacts/spec-software-overview-search-filter.md`
+  summary: Wire deeper accessibility for the new Software/Sets overview controls — associate each category group's `<summary>` with its table via `aria-labelledby`, and put match counts / "no matches" messages in an `aria-live` region so a screen-reader user is told when search/filter results change.
+  evidence: All interactive controls already have `aria-label`s; this is a refinement beyond that baseline. No accessibility requirement is recorded for this internal single-user tool — worth a future pass if that changes.

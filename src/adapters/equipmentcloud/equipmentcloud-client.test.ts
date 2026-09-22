@@ -389,8 +389,20 @@ describe('EquipmentCloudClient.listSets', () => {
         return Promise.resolve(
           jsonResponse({
             items: [
-              { id: 1, name: 'Office Installation', category: 'Office Software', state: 'RELEASED' },
-              { id: 2, name: 'Draft Set', category: 'Misc', state: 'UNMAPPED_STATE' },
+              {
+                id: 1,
+                name: 'Office Installation',
+                category: 'Office Software',
+                state: 'RELEASED',
+                updated_on: '2026-03-01T10:00:00Z',
+              },
+              {
+                id: 2,
+                name: 'Draft Set',
+                category: 'Misc',
+                state: 'UNMAPPED_STATE',
+                updated_on: '2026-02-15T08:30:00Z',
+              },
             ],
           }),
         );
@@ -405,8 +417,22 @@ describe('EquipmentCloudClient.listSets', () => {
     expect(result).toEqual({
       ok: true,
       items: [
-        { id: 1, name: 'Office Installation', category: 'Office Software', state: 'RELEASED', stateLabel: 'Released' },
-        { id: 2, name: 'Draft Set', category: 'Misc', state: 'UNMAPPED_STATE', stateLabel: 'UNMAPPED_STATE' },
+        {
+          id: 1,
+          name: 'Office Installation',
+          category: 'Office Software',
+          state: 'RELEASED',
+          stateLabel: 'Released',
+          updatedOn: '2026-03-01T10:00:00Z',
+        },
+        {
+          id: 2,
+          name: 'Draft Set',
+          category: 'Misc',
+          state: 'UNMAPPED_STATE',
+          stateLabel: 'UNMAPPED_STATE',
+          updatedOn: '2026-02-15T08:30:00Z',
+        },
       ],
     });
   });
@@ -458,7 +484,7 @@ describe('EquipmentCloudClient.listSets', () => {
       if (url === 'https://example.test/cloudconnect/api/softwarecenter/v1/sharedsets') {
         return Promise.resolve(
           jsonResponse({
-            items: [{ id: 1, name: 'Uncategorized Set', category: null, state: 'DRAFT' }],
+            items: [{ id: 1, name: 'Uncategorized Set', category: null, state: 'DRAFT', updated_on: '2026-01-05T00:00:00Z' }],
           }),
         );
       }
@@ -471,7 +497,50 @@ describe('EquipmentCloudClient.listSets', () => {
 
     expect(result).toEqual({
       ok: true,
-      items: [{ id: 1, name: 'Uncategorized Set', category: '', state: 'DRAFT', stateLabel: 'DRAFT' }],
+      items: [
+        {
+          id: 1,
+          name: 'Uncategorized Set',
+          category: '',
+          state: 'DRAFT',
+          stateLabel: 'DRAFT',
+          updatedOn: '2026-01-05T00:00:00Z',
+        },
+      ],
+    });
+  });
+
+  it('normalizes a missing/null updated_on to an empty string instead of passing it through', async () => {
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url === 'https://example.test/cloudconnect/api/softwarecenter/v1/releases') {
+        return Promise.resolve(jsonResponse({ items: [] }));
+      }
+      if (url === 'https://example.test/cloudconnect/api/softwarecenter/v1/sharedsets') {
+        return Promise.resolve(
+          jsonResponse({
+            items: [{ id: 1, name: 'Undated Set', category: 'Misc', state: 'DRAFT', updated_on: null }],
+          }),
+        );
+      }
+      throw new Error(`unexpected fetch to ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = new EquipmentCloudClient('https://example.test', CREDENTIALS);
+    const result = await client.listSets();
+
+    expect(result).toEqual({
+      ok: true,
+      items: [
+        {
+          id: 1,
+          name: 'Undated Set',
+          category: 'Misc',
+          state: 'DRAFT',
+          stateLabel: 'DRAFT',
+          updatedOn: '',
+        },
+      ],
     });
   });
 });

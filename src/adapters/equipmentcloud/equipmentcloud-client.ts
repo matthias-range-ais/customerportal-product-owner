@@ -44,6 +44,7 @@ type RawSoftwareSetItem = {
   name: string;
   category: string | null | undefined;
   state: string;
+  updated_on: string | null | undefined;
 };
 type RawReleaseItem = { release_id: string; label: string };
 
@@ -187,6 +188,7 @@ export class EquipmentCloudClient implements EquipmentCloudPort {
       category: set.category ?? '',
       state: set.state,
       stateLabel: labelByState.get(set.state) ?? set.state,
+      updatedOn: set.updated_on ?? '',
     }));
 
     return { ok: true, items };

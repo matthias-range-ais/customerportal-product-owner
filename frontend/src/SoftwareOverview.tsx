@@ -21,6 +21,7 @@ interface SoftwareSetItem {
   category: string
   state: string
   stateLabel: string
+  updatedOn: string
 }
 
 interface SoftwareOverviewData {
@@ -53,6 +54,226 @@ function failureMessage(failure: EquipmentCloudFailure): string {
     return 'Zeitüberschreitung: keine Antwort von EquipmentCloud.'
   }
   return `Netzwerkfehler: ${failure.message}`
+}
+
+/**
+ * Formats an EquipmentCloud `updated_on` ISO-8601 timestamp for a German audience. Falls back to
+ * the raw string (instead of "Invalid Date") when the value can't be parsed, per the "Datum"
+ * column's edge case in the spec's I/O matrix.
+ */
+function formatDate(iso: string): string {
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) {
+    return iso
+  }
+  return date.toLocaleDateString('de-DE')
+}
+
+function matchesSoftwareQuery(item: SoftwareItem, normalizedQuery: string): boolean {
+  if (!normalizedQuery) {
+    return true
+  }
+  return (
+    item.name.toLowerCase().includes(normalizedQuery) ||
+    item.category.toLowerCase().includes(normalizedQuery) ||
+    item.description.toLowerCase().includes(normalizedQuery)
+  )
+}
+
+function matchesSetQuery(item: SoftwareSetItem, normalizedQuery: string): boolean {
+  if (!normalizedQuery) {
+    return true
+  }
+  return item.name.toLowerCase().includes(normalizedQuery) || item.category.toLowerCase().includes(normalizedQuery)
+}
+
+/** Groups sets by category (alphabetically, empty-string category included), each group sorted by name. */
+function groupSetsByCategory(items: SoftwareSetItem[]): Array<[string, SoftwareSetItem[]]> {
+  const groups = new Map<string, SoftwareSetItem[]>()
+  for (const item of items) {
+    const category = item.category.trim()
+    const group = groups.get(category)
+    if (group) {
+      group.push(item)
+    } else {
+      groups.set(category, [item])
+    }
+  }
+  for (const group of groups.values()) {
+    group.sort((a, b) => a.name.localeCompare(b.name, 'de-DE'))
+  }
+  return Array.from(groups.entries()).sort(([a], [b]) => a.localeCompare(b, 'de-DE'))
+}
+
+interface SoftwareTableProps {
+  items: SoftwareItem[]
+}
+
+/** Software table with a client-side search over name/category/description (Story: search & filter). */
+function SoftwareTable({ items }: SoftwareTableProps) {
+  const [query, setQuery] = useState('')
+  const normalizedQuery = query.trim().toLowerCase()
+  const filtered = items.filter((item) => matchesSoftwareQuery(item, normalizedQuery))
+
+  return (
+    <div className="table-block">
+      <h3>Software</h3>
+      <div className="filter-bar">
+        <input
+          type="search"
+          className="filter-input"
+          aria-label="Software suchen"
+          placeholder="Suche nach Name, Kategorie oder Beschreibung…"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+        />
+      </div>
+      <div className="table-scroll">
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Kategorie</th>
+              <th>Beschreibung</th>
+              <th>Versionen</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.length === 0 ? (
+              <tr>
+                <td colSpan={4} className="data-table-empty">
+                  Keine Software vorhanden.
+                </td>
+              </tr>
+            ) : filtered.length === 0 ? (
+              <tr>
+                <td colSpan={4} className="data-table-empty">
+                  Keine Treffer für diese Suche.
+                </td>
+              </tr>
+            ) : (
+              filtered.map((item) => (
+                <tr key={item.id}>
+                  <td>{item.name}</td>
+                  <td>{item.category}</td>
+                  <td>{item.description}</td>
+                  <td>{item.versions.map((version) => version.name).join(', ') || '—'}</td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+interface SoftwareSetsSectionProps {
+  items: SoftwareSetItem[]
+}
+
+/**
+ * Sets table with a client-side search (name/category) combinable with a release-state filter,
+ * grouped into per-category collapsible sections, each showing the "Datum" column.
+ */
+function SoftwareSetsSection({ items }: SoftwareSetsSectionProps) {
+  const [query, setQuery] = useState('')
+  const [stateFilter, setStateFilter] = useState('')
+
+  const stateOptions = Array.from(new Map(items.map((item) => [item.state, item.stateLabel])).entries()).sort(
+    ([, labelA], [, labelB]) => labelA.localeCompare(labelB, 'de-DE'),
+  )
+
+  const normalizedQuery = query.trim().toLowerCase()
+  const filtered = items.filter(
+    (item) => matchesSetQuery(item, normalizedQuery) && (stateFilter === '' || item.state === stateFilter),
+  )
+  const groups = groupSetsByCategory(filtered)
+
+  return (
+    <div className="table-block">
+      <h3>Sets</h3>
+      <div className="filter-bar">
+        <input
+          type="search"
+          className="filter-input"
+          aria-label="Sets suchen"
+          placeholder="Suche nach Name oder Kategorie…"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+        />
+        <select
+          className="filter-input"
+          aria-label="Nach Freigabestatus filtern"
+          value={stateFilter}
+          onChange={(event) => setStateFilter(event.target.value)}
+        >
+          <option value="">Alle Status</option>
+          {stateOptions.map(([state, label]) => (
+            <option key={state} value={state}>
+              {label}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {items.length === 0 ? (
+        <div className="table-scroll">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Kategorie</th>
+                <th>Freigabestatus</th>
+                <th>Datum</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td colSpan={4} className="data-table-empty">
+                  Keine Sets vorhanden.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      ) : groups.length === 0 ? (
+        <p className="data-table-empty">Keine Treffer für diese Filter.</p>
+      ) : (
+        <div className="category-groups">
+          {groups.map(([category, groupItems]) => (
+            <details className="category-group" open key={category}>
+              <summary>
+                {category || 'Ohne Kategorie'} <span className="category-count">({groupItems.length})</span>
+              </summary>
+              <div className="table-scroll">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Name</th>
+                      <th>Kategorie</th>
+                      <th>Freigabestatus</th>
+                      <th>Datum</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {groupItems.map((item) => (
+                      <tr key={item.id}>
+                        <td>{item.name}</td>
+                        <td>{item.category}</td>
+                        <td>{item.stateLabel}</td>
+                        <td>{formatDate(item.updatedOn)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </details>
+          ))}
+        </div>
+      )}
+    </div>
+  )
 }
 
 interface SoftwareOverviewProps {
@@ -134,71 +355,8 @@ function SoftwareOverview({ activeEnvironment }: SoftwareOverviewProps) {
 
       {state.status === 'success' && (
         <>
-          <div className="table-block">
-            <h3>Software</h3>
-            <div className="table-scroll">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Name</th>
-                    <th>Kategorie</th>
-                    <th>Beschreibung</th>
-                    <th>Versionen</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {state.data.software.length === 0 ? (
-                    <tr>
-                      <td colSpan={4} className="data-table-empty">
-                        Keine Software vorhanden.
-                      </td>
-                    </tr>
-                  ) : (
-                    state.data.software.map((item) => (
-                      <tr key={item.id}>
-                        <td>{item.name}</td>
-                        <td>{item.category}</td>
-                        <td>{item.description}</td>
-                        <td>{item.versions.map((version) => version.name).join(', ') || '—'}</td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          <div className="table-block">
-            <h3>Sets</h3>
-            <div className="table-scroll">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Name</th>
-                    <th>Kategorie</th>
-                    <th>Freigabestatus</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {state.data.sets.length === 0 ? (
-                    <tr>
-                      <td colSpan={3} className="data-table-empty">
-                        Keine Sets vorhanden.
-                      </td>
-                    </tr>
-                  ) : (
-                    state.data.sets.map((item) => (
-                      <tr key={item.id}>
-                        <td>{item.name}</td>
-                        <td>{item.category}</td>
-                        <td>{item.stateLabel}</td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
+          <SoftwareTable items={state.data.software} />
+          <SoftwareSetsSection items={state.data.sets} />
         </>
       )}
     </section>

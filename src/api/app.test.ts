@@ -534,7 +534,19 @@ describe('GET /api/software', () => {
         return Promise.resolve(jsonResponse({ items: [{ id: 9, release_id: 'RELEASED', label: 'Released' }] }));
       }
       if (url.endsWith('/sharedsets')) {
-        return Promise.resolve(jsonResponse({ items: [{ id: 2, name: 'Office Set', category: 'Office', state: 'RELEASED' }] }));
+        return Promise.resolve(
+          jsonResponse({
+            items: [
+              {
+                id: 2,
+                name: 'Office Set',
+                category: 'Office',
+                state: 'RELEASED',
+                updated_on: '2026-03-01T10:00:00Z',
+              },
+            ],
+          }),
+        );
       }
       throw new Error(`unexpected fetch to ${url}`);
     });
@@ -545,7 +557,16 @@ describe('GET /api/software', () => {
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({
       software: [{ id: 1, name: 'MS Word', category: 'Office', description: 'Word processor', versions: [] }],
-      sets: [{ id: 2, name: 'Office Set', category: 'Office', state: 'RELEASED', stateLabel: 'Released' }],
+      sets: [
+        {
+          id: 2,
+          name: 'Office Set',
+          category: 'Office',
+          state: 'RELEASED',
+          stateLabel: 'Released',
+          updatedOn: '2026-03-01T10:00:00Z',
+        },
+      ],
     });
 
     await app.close();
