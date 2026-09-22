@@ -327,10 +327,63 @@ describe('SoftwareOverview — Software category tree and detail expansion', () 
     await screen.findByRole('heading', { name: 'Software', level: 3 })
     expandAllCategoryGroups()
 
+    // Not shown as a Kategorie/Versionen column, and not visible before the click.
+    expect(screen.queryByText('Word processor')).not.toBeInTheDocument()
+
     fireEvent.click(screen.getByText('MS Word'))
 
     expect(screen.getByText('Word processor')).toBeInTheDocument()
     expect(screen.getByText('2016, 2019')).toBeInTheDocument()
+  })
+
+  it('collapses an expanded item detail when the search query changes the visible items', async () => {
+    renderWithCategorizedSoftware()
+    await screen.findByRole('heading', { name: 'Software', level: 3 })
+    expandAllCategoryGroups()
+
+    fireEvent.click(screen.getByText('MS Word'))
+    expect(screen.getByText('Word processor')).toBeInTheDocument()
+
+    // Narrows the list so MS Word drops out, then widens it again — the detail must not
+    // silently resurface once MS Word reappears without being clicked again. Detail visibility
+    // is driven by `expandedId`, independent of the category `<details>` open/closed state.
+    fireEvent.change(screen.getByLabelText('Software suchen'), { target: { value: 'Excel' } })
+    fireEvent.change(screen.getByLabelText('Software suchen'), { target: { value: '' } })
+
+    expect(screen.queryByText('Word processor')).not.toBeInTheDocument()
+  })
+
+  it('collapses an expanded item detail when the active environment changes and reloads the item list', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          software: [{ id: 1, name: 'MS Word', category: 'Office', description: 'Word processor', versions: [] }],
+          sets: [],
+        }),
+      )
+      .mockResolvedValueOnce(
+        // A different environment reusing the same id — EquipmentCloud item ids are not
+        // guaranteed distinct across environments.
+        jsonResponse({
+          software: [{ id: 1, name: 'Notepad', category: 'Office', description: 'Text editor', versions: [] }],
+          sets: [],
+        }),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { rerender } = render(<SoftwareOverview activeEnvironment="test" />)
+    await screen.findByRole('heading', { name: 'Software', level: 3 })
+    expandAllCategoryGroups()
+    fireEvent.click(screen.getByText('MS Word'))
+    expect(screen.getByText('Word processor')).toBeInTheDocument()
+
+    rerender(<SoftwareOverview activeEnvironment="prod" />)
+    await screen.findByText('Notepad')
+
+    // Detail visibility is driven by `expandedId`, independent of the category `<details>`
+    // open/closed state, so this holds regardless of whether the group re-collapsed.
+    expect(screen.queryByText('Text editor')).not.toBeInTheDocument()
   })
 
   it('shows clear placeholders when a software item has no description or versions', async () => {

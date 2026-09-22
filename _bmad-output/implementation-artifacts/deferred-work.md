@@ -58,3 +58,9 @@
 - source_spec: none
   summary: Replace the Sets table's single-select release-state `<select>` with a multi-select chip control (OR logic): picking a status from a list adds it as a removable chip (×), and default the category groups to collapsed on load.
   evidence: Independently shippable — touches only `SoftwareSetsSection`'s filter control and default `<details>` state, unrelated to the layout split or the Software table restructuring.
+
+## Deferred from: bmad-build token-budget split of spec-software-category-tree.md (2026-09-22)
+
+- source_spec: `{project-root}/_bmad-output/implementation-artifacts/spec-software-category-tree.md`
+  summary: Replace the Sets table's single-select release-state `<select>` with a multi-select chip control (OR logic): picking a status from a dropdown adds it as a removable chip (×), removable individually.
+  evidence: The user initially chose to keep this together with the Software category-tree work in one spec, but once the combined spec measured ~2000-2400 tokens (target 900-1600) they chose to split after all. Independently shippable — touches only `SoftwareSetsSection`'s filter control; the Sets-groups-default-collapsed part of the earlier deferred item above is absorbed into `spec-software-category-tree.md` instead, alongside the Software tree's own default-collapsed requirement.
