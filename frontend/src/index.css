@@ -434,6 +434,62 @@ input[type='search'].filter-input {
   font-size: 13px;
 }
 
+.software-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.software-list-item + .software-list-item {
+  border-top: 1px solid var(--border);
+}
+
+.software-list-row {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  font-weight: 400;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.software-list-row:hover {
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
+.software-list-row:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-bg);
+}
+
+.software-list-row[aria-expanded='true'] {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.software-detail {
+  padding: 0 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 14px;
+  color: var(--text);
+}
+
+.software-detail p {
+  margin: 0;
+}
+
 .settings-dialog {
   width: min(560px, calc(100vw - 48px));
   max-height: min(80vh, 720px);

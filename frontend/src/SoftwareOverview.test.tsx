@@ -6,6 +6,16 @@ function jsonResponse(body: unknown, ok = true, status = ok ? 200 : 400) {
   return { ok, status, json: async () => body } as Response
 }
 
+/** Expands every category `<details>` in the rendered overview by clicking its `<summary>`. */
+function expandAllCategoryGroups() {
+  for (const group of screen.getAllByRole('group')) {
+    const summary = group.querySelector('summary')
+    if (summary) {
+      fireEvent.click(summary)
+    }
+  }
+}
+
 describe('SoftwareOverview', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
@@ -23,7 +33,35 @@ describe('SoftwareOverview', () => {
     ).toBeInTheDocument()
   })
 
-  it('renders the software and sets tables with live data', async () => {
+  it('starts with every category collapsed in both tables on load, with nothing pre-expanded', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          software: [{ id: 1, name: 'MS Word', category: 'Office', description: '', versions: [] }],
+          sets: [
+            { id: 2, name: 'Office Set', category: 'Office', state: 'RELEASED', stateLabel: 'Released', updatedOn: '2026-03-01T10:00:00Z' },
+          ],
+        }),
+      ),
+    )
+
+    render(<SoftwareOverview activeEnvironment="test" />)
+    await screen.findByRole('heading', { name: 'Software', level: 3 })
+
+    // One category group in Software, one in Sets.
+    const groups = screen.getAllByRole('group')
+    expect(groups).toHaveLength(2)
+    for (const group of groups) {
+      expect((group as HTMLDetailsElement).open).toBe(false)
+    }
+    // Collapsed `<details>` content stays in the DOM (native browser behavior) — assert it's
+    // hidden rather than absent.
+    expect(screen.getByText('MS Word')).not.toBeVisible()
+    expect(screen.getByText('Office Set')).not.toBeVisible()
+  })
+
+  it('renders the software and sets tables with live data once their categories are expanded', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue(
@@ -47,12 +85,17 @@ describe('SoftwareOverview', () => {
 
     render(<SoftwareOverview activeEnvironment="test" />)
 
-    expect(await screen.findByText('MS Word')).toBeInTheDocument()
+    await screen.findByRole('heading', { name: 'Software', level: 3 })
+    expandAllCategoryGroups()
+
+    expect(screen.getByText('MS Word')).toBeInTheDocument()
+    expect(screen.getByText('Office Set')).toBeInTheDocument()
+    // Scoped to the table cell — "Released" also appears as an option in the Sets state filter <select>.
+    expect(screen.getByRole('cell', { name: 'Released' })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByText('MS Word'))
     expect(screen.getByText('Word processor')).toBeInTheDocument()
     expect(screen.getByText('2016')).toBeInTheDocument()
-    expect(screen.getByText('Office Set')).toBeInTheDocument()
-    // Scoped to the table cell — "Released" also appears as an option in the new state filter <select>.
-    expect(screen.getByRole('cell', { name: 'Released' })).toBeInTheDocument()
   })
 
   it('wraps the Software and Sets tables in the responsive two-column layout container', async () => {
@@ -69,7 +112,7 @@ describe('SoftwareOverview', () => {
     )
 
     const { container } = render(<SoftwareOverview activeEnvironment="test" />)
-    await screen.findByText('MS Word')
+    await screen.findByRole('heading', { name: 'Software', level: 3 })
 
     const wrapper = container.querySelector('.overview-tables')
     expect(wrapper).not.toBeNull()
@@ -133,7 +176,9 @@ describe('SoftwareOverview', () => {
 
     rerender(<SoftwareOverview activeEnvironment="test" />)
 
-    expect(await screen.findByText('MS Word')).toBeInTheDocument()
+    await screen.findByRole('heading', { name: 'Software', level: 3 })
+    expandAllCategoryGroups()
+    expect(screen.getByText('MS Word')).toBeInTheDocument()
     expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 })
@@ -161,7 +206,9 @@ describe('SoftwareOverview — Software search', () => {
 
   it('filters rows to items whose name, category, or description matches the query (case-insensitive)', async () => {
     renderWithSoftware()
-    await screen.findByText('MS Word')
+    await screen.findByRole('heading', { name: 'Software', level: 3 })
+    expandAllCategoryGroups()
+    expect(screen.getByText('MS Word')).toBeInTheDocument()
 
     fireEvent.change(screen.getByLabelText('Software suchen'), { target: { value: 'OFFICE' } })
 
@@ -171,7 +218,8 @@ describe('SoftwareOverview — Software search', () => {
 
   it('matches on description text', async () => {
     renderWithSoftware()
-    await screen.findByText('MS Word')
+    await screen.findByRole('heading', { name: 'Software', level: 3 })
+    expandAllCategoryGroups()
 
     fireEvent.change(screen.getByLabelText('Software suchen'), { target: { value: 'web browser' } })
 
@@ -181,12 +229,144 @@ describe('SoftwareOverview — Software search', () => {
 
   it('shows a "no matches" placeholder distinct from the "no data" placeholder when the search has no results', async () => {
     renderWithSoftware()
-    await screen.findByText('MS Word')
+    await screen.findByRole('heading', { name: 'Software', level: 3 })
 
     fireEvent.change(screen.getByLabelText('Software suchen'), { target: { value: 'nonexistent' } })
 
     expect(screen.getByText('Keine Treffer für diese Suche.')).toBeInTheDocument()
     expect(screen.queryByText('Keine Software vorhanden.')).not.toBeInTheDocument()
+  })
+})
+
+describe('SoftwareOverview — Software category tree and detail expansion', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  function renderWithCategorizedSoftware() {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          software: [
+            {
+              id: 1,
+              name: 'MS Word',
+              category: 'Office',
+              description: 'Word processor',
+              versions: [
+                { id: 30, name: '2016' },
+                { id: 31, name: '2019' },
+              ],
+            },
+            { id: 2, name: 'MS Excel', category: 'Office', description: '', versions: [] },
+            { id: 3, name: 'Firefox', category: 'Browser', description: 'Web browser', versions: [{ id: 40, name: '128' }] },
+          ],
+          sets: [],
+        }),
+      ),
+    )
+    return render(<SoftwareOverview activeEnvironment="test" />)
+  }
+
+  it('shows each category collapsed with its filtered item count', async () => {
+    renderWithCategorizedSoftware()
+    await screen.findByRole('heading', { name: 'Software', level: 3 })
+
+    const groups = screen.getAllByRole('group')
+    expect(groups).toHaveLength(2)
+    for (const group of groups) {
+      expect((group as HTMLDetailsElement).open).toBe(false)
+    }
+
+    const summaries = groups.map((group) => group.querySelector('summary')?.textContent ?? '')
+    expect(summaries.find((text) => text.startsWith('Browser'))).toContain('(1)')
+    expect(summaries.find((text) => text.startsWith('Office'))).toContain('(2)')
+  })
+
+  it('updates a category count to the search-filtered count, not the pre-filter total', async () => {
+    renderWithCategorizedSoftware()
+    await screen.findByRole('heading', { name: 'Software', level: 3 })
+
+    // Narrows Office from 2 items down to 1 (still nonzero) while it stays visible.
+    fireEvent.change(screen.getByLabelText('Software suchen'), { target: { value: 'MS Word' } })
+
+    const groups = screen.getAllByRole('group')
+    expect(groups).toHaveLength(1)
+    expect(groups[0].querySelector('summary')?.textContent).toContain('Office')
+    expect(groups[0].querySelector('summary')?.textContent).toContain('(1)')
+  })
+
+  it('expanding a category shows only its software names', async () => {
+    renderWithCategorizedSoftware()
+    await screen.findByRole('heading', { name: 'Software', level: 3 })
+
+    const browserGroup = screen
+      .getAllByRole('group')
+      .find((group) => group.querySelector('summary')?.textContent?.startsWith('Browser'))!
+    fireEvent.click(browserGroup.querySelector('summary')!)
+
+    expect(within(browserGroup).getByText('Firefox')).toBeInTheDocument()
+    expect(screen.getByText('MS Word')).not.toBeVisible()
+    expect(screen.getByText('MS Excel')).not.toBeVisible()
+  })
+
+  it('does not render a category with zero matches after filtering', async () => {
+    renderWithCategorizedSoftware()
+    await screen.findByRole('heading', { name: 'Software', level: 3 })
+
+    fireEvent.change(screen.getByLabelText('Software suchen'), { target: { value: 'Firefox' } })
+
+    const groups = screen.getAllByRole('group')
+    expect(groups).toHaveLength(1)
+    expect(groups[0].querySelector('summary')?.textContent).toContain('Browser')
+  })
+
+  it('expands an inline detail block with the description and comma-joined version names on click', async () => {
+    renderWithCategorizedSoftware()
+    await screen.findByRole('heading', { name: 'Software', level: 3 })
+    expandAllCategoryGroups()
+
+    fireEvent.click(screen.getByText('MS Word'))
+
+    expect(screen.getByText('Word processor')).toBeInTheDocument()
+    expect(screen.getByText('2016, 2019')).toBeInTheDocument()
+  })
+
+  it('shows clear placeholders when a software item has no description or versions', async () => {
+    renderWithCategorizedSoftware()
+    await screen.findByRole('heading', { name: 'Software', level: 3 })
+    expandAllCategoryGroups()
+
+    fireEvent.click(screen.getByText('MS Excel'))
+
+    expect(screen.getByText('Keine Beschreibung vorhanden.')).toBeInTheDocument()
+    expect(screen.getByText('Keine Versionen vorhanden.')).toBeInTheDocument()
+  })
+
+  it('collapses the previously expanded item when a different item is clicked, expanding only one at a time', async () => {
+    renderWithCategorizedSoftware()
+    await screen.findByRole('heading', { name: 'Software', level: 3 })
+    expandAllCategoryGroups()
+
+    fireEvent.click(screen.getByText('MS Word'))
+    expect(screen.getByText('Word processor')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByText('MS Excel'))
+    expect(screen.queryByText('Word processor')).not.toBeInTheDocument()
+    expect(screen.getByText('Keine Beschreibung vorhanden.')).toBeInTheDocument()
+  })
+
+  it('collapses the detail block when the already-expanded item is clicked again', async () => {
+    renderWithCategorizedSoftware()
+    await screen.findByRole('heading', { name: 'Software', level: 3 })
+    expandAllCategoryGroups()
+
+    fireEvent.click(screen.getByText('MS Word'))
+    expect(screen.getByText('Word processor')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByText('MS Word'))
+    expect(screen.queryByText('Word processor')).not.toBeInTheDocument()
   })
 })
 
@@ -241,9 +421,9 @@ describe('SoftwareOverview — Sets search, state filter, and grouping', () => {
     return render(<SoftwareOverview activeEnvironment="test" />)
   }
 
-  it('groups sets by category into open-by-default sections, sorted alphabetically with accurate counts', async () => {
+  it('groups sets by category into collapsed-by-default sections, sorted alphabetically with accurate counts', async () => {
     renderWithSets()
-    await screen.findByText('Office Base')
+    await screen.findByRole('heading', { name: 'Sets', level: 3 })
 
     const groups = screen.getAllByRole('group')
     expect(groups).toHaveLength(3)
@@ -258,16 +438,23 @@ describe('SoftwareOverview — Sets search, state filter, and grouping', () => {
     expect(summaries[2]).toContain('(1)')
 
     for (const group of groups) {
-      expect((group as HTMLDetailsElement).open).toBe(true)
+      expect((group as HTMLDetailsElement).open).toBe(false)
     }
+    expect(screen.getByText('Office Base')).not.toBeVisible()
+
+    fireEvent.click(groups[1].querySelector('summary')!)
+    expect((groups[1] as HTMLDetailsElement).open).toBe(true)
+    expect(within(groups[1]).getByText('Office Base')).toBeInTheDocument()
   })
 
   it('sorts items within a group by name', async () => {
     renderWithSets()
-    await screen.findByText('Office Base')
+    await screen.findByRole('heading', { name: 'Sets', level: 3 })
 
     const groups = screen.getAllByRole('group')
     const officeGroup = groups[1]
+    fireEvent.click(officeGroup.querySelector('summary')!)
+
     const names = within(officeGroup)
       .getAllByRole('row')
       .slice(1) // skip header row
@@ -278,30 +465,35 @@ describe('SoftwareOverview — Sets search, state filter, and grouping', () => {
 
   it('filters by search query and release-state filter combined, keeping rows grouped by category', async () => {
     renderWithSets()
-    await screen.findByText('Office Base')
+    await screen.findByRole('heading', { name: 'Sets', level: 3 })
 
     fireEvent.change(screen.getByLabelText('Sets suchen'), { target: { value: 'office' } })
     fireEvent.change(screen.getByLabelText('Nach Freigabestatus filtern'), { target: { value: 'DRAFT' } })
 
-    expect(screen.getByText('Office Extended')).toBeInTheDocument()
-    expect(screen.queryByText('Office Base')).not.toBeInTheDocument()
-    expect(screen.queryByText('Windows Baseline')).not.toBeInTheDocument()
-    expect(screen.queryByText('Misc Tool')).not.toBeInTheDocument()
-
     const groups = screen.getAllByRole('group')
     expect(groups).toHaveLength(1)
     expect(groups[0].querySelector('summary')?.textContent).toContain('(1)')
+
+    fireEvent.click(groups[0].querySelector('summary')!)
+    expect(within(groups[0]).getByText('Office Extended')).toBeInTheDocument()
+    expect(screen.queryByText('Office Base')).not.toBeInTheDocument()
+    expect(screen.queryByText('Windows Baseline')).not.toBeInTheDocument()
+    expect(screen.queryByText('Misc Tool')).not.toBeInTheDocument()
   })
 
   it('matches sets by category alone, independent of the name-match branch', async () => {
     renderWithSets()
-    await screen.findByText('Office Base')
+    await screen.findByRole('heading', { name: 'Sets', level: 3 })
 
     // "operating" matches Windows Baseline's category ("Operating Systems") but none of the
     // items' names — isolates the category-match branch of matchesSetQuery from name matching.
     fireEvent.change(screen.getByLabelText('Sets suchen'), { target: { value: 'operating' } })
 
-    expect(screen.getByText('Windows Baseline')).toBeInTheDocument()
+    const groups = screen.getAllByRole('group')
+    expect(groups).toHaveLength(1)
+    fireEvent.click(groups[0].querySelector('summary')!)
+
+    expect(within(groups[0]).getByText('Windows Baseline')).toBeInTheDocument()
     expect(screen.queryByText('Office Base')).not.toBeInTheDocument()
     expect(screen.queryByText('Office Extended')).not.toBeInTheDocument()
     expect(screen.queryByText('Misc Tool')).not.toBeInTheDocument()
@@ -309,7 +501,7 @@ describe('SoftwareOverview — Sets search, state filter, and grouping', () => {
 
   it('shows a "no matches for these filters" placeholder distinct from the "no data" placeholder', async () => {
     renderWithSets()
-    await screen.findByText('Office Base')
+    await screen.findByRole('heading', { name: 'Sets', level: 3 })
 
     fireEvent.change(screen.getByLabelText('Sets suchen'), { target: { value: 'nonexistent-set-name' } })
 
@@ -344,10 +536,13 @@ describe('SoftwareOverview — Sets "Datum" column', () => {
     )
 
     render(<SoftwareOverview activeEnvironment="test" />)
-    await screen.findByText('Office Base')
+    await screen.findByRole('heading', { name: 'Sets', level: 3 })
+
+    const group = screen.getByRole('group')
+    fireEvent.click(group.querySelector('summary')!)
 
     const expected = new Date('2026-03-01T10:00:00Z').toLocaleDateString('de-DE')
-    expect(screen.getByText(expected)).toBeInTheDocument()
+    expect(within(group).getByText(expected)).toBeInTheDocument()
   })
 
   it('falls back to the raw string instead of "Invalid Date" when updated_on cannot be parsed', async () => {
@@ -371,9 +566,12 @@ describe('SoftwareOverview — Sets "Datum" column', () => {
     )
 
     render(<SoftwareOverview activeEnvironment="test" />)
-    await screen.findByText('Broken Date Set')
+    await screen.findByRole('heading', { name: 'Sets', level: 3 })
 
-    expect(screen.getByText('not-a-real-date')).toBeInTheDocument()
+    const group = screen.getByRole('group')
+    fireEvent.click(group.querySelector('summary')!)
+
+    expect(within(group).getByText('not-a-real-date')).toBeInTheDocument()
     expect(screen.queryByText('Invalid Date')).not.toBeInTheDocument()
   })
 })

@@ -87,9 +87,9 @@ function matchesSetQuery(item: SoftwareSetItem, normalizedQuery: string): boolea
   return item.name.toLowerCase().includes(normalizedQuery) || item.category.toLowerCase().includes(normalizedQuery)
 }
 
-/** Groups sets by category (alphabetically, empty-string category included), each group sorted by name. */
-function groupSetsByCategory(items: SoftwareSetItem[]): Array<[string, SoftwareSetItem[]]> {
-  const groups = new Map<string, SoftwareSetItem[]>()
+/** Groups items by category (alphabetically, empty-string category included), each group sorted by name. */
+function groupByCategory<T extends { category: string; name: string }>(items: T[]): Array<[string, T[]]> {
+  const groups = new Map<string, T[]>()
   for (const item of items) {
     const category = item.category.trim()
     const group = groups.get(category)
@@ -109,11 +109,25 @@ interface SoftwareTableProps {
   items: SoftwareItem[]
 }
 
-/** Software table with a client-side search over name/category/description (Story: search & filter). */
+/**
+ * Software table with a client-side search over name/category/description, grouped into
+ * collapsed-by-default per-category sections. Expanding a category shows a plain list of its
+ * software names; clicking a name expands an inline detail block (description + versions) below
+ * it — data the /api/software response already carries, so no extra request is made on click.
+ */
 function SoftwareTable({ items }: SoftwareTableProps) {
   const [query, setQuery] = useState('')
+  const [expandedId, setExpandedId] = useState<number | null>(null)
   const normalizedQuery = query.trim().toLowerCase()
   const filtered = items.filter((item) => matchesSoftwareQuery(item, normalizedQuery))
+  const groups = groupByCategory(filtered)
+
+  // Guards against a stale expandedId surviving a visible-item-set change (environment switch,
+  // or the search filtering a different item into view) — without this, a detail block could
+  // auto-show for an item the Product Owner never clicked.
+  useEffect(() => {
+    setExpandedId(null)
+  }, [items])
 
   return (
     <div className="table-block">
@@ -125,45 +139,55 @@ function SoftwareTable({ items }: SoftwareTableProps) {
           aria-label="Software suchen"
           placeholder="Suche nach Name, Kategorie oder Beschreibung…"
           value={query}
-          onChange={(event) => setQuery(event.target.value)}
+          onChange={(event) => {
+            setQuery(event.target.value)
+            setExpandedId(null)
+          }}
         />
       </div>
-      <div className="table-scroll">
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Kategorie</th>
-              <th>Beschreibung</th>
-              <th>Versionen</th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.length === 0 ? (
-              <tr>
-                <td colSpan={4} className="data-table-empty">
-                  Keine Software vorhanden.
-                </td>
-              </tr>
-            ) : filtered.length === 0 ? (
-              <tr>
-                <td colSpan={4} className="data-table-empty">
-                  Keine Treffer für diese Suche.
-                </td>
-              </tr>
-            ) : (
-              filtered.map((item) => (
-                <tr key={item.id}>
-                  <td>{item.name}</td>
-                  <td>{item.category}</td>
-                  <td>{item.description}</td>
-                  <td>{item.versions.map((version) => version.name).join(', ') || '—'}</td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+
+      {items.length === 0 ? (
+        <p className="data-table-empty">Keine Software vorhanden.</p>
+      ) : groups.length === 0 ? (
+        <p className="data-table-empty">Keine Treffer für diese Suche.</p>
+      ) : (
+        <div className="category-groups">
+          {groups.map(([category, groupItems]) => (
+            <details className="category-group" key={category}>
+              <summary>
+                {category || 'Ohne Kategorie'} <span className="category-count">({groupItems.length})</span>
+              </summary>
+              <ul className="software-list">
+                {groupItems.map((item) => {
+                  const isExpanded = expandedId === item.id
+                  return (
+                    <li className="software-list-item" key={item.id}>
+                      <button
+                        type="button"
+                        className="software-list-row"
+                        aria-expanded={isExpanded}
+                        onClick={() => setExpandedId((current) => (current === item.id ? null : item.id))}
+                      >
+                        {item.name}
+                      </button>
+                      {isExpanded && (
+                        <div className="software-detail">
+                          <p>{item.description || 'Keine Beschreibung vorhanden.'}</p>
+                          <p>
+                            {item.versions.length > 0
+                              ? item.versions.map((version) => version.name).join(', ')
+                              : 'Keine Versionen vorhanden.'}
+                          </p>
+                        </div>
+                      )}
+                    </li>
+                  )
+                })}
+              </ul>
+            </details>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
@@ -188,7 +212,7 @@ function SoftwareSetsSection({ items }: SoftwareSetsSectionProps) {
   const filtered = items.filter(
     (item) => matchesSetQuery(item, normalizedQuery) && (stateFilter === '' || item.state === stateFilter),
   )
-  const groups = groupSetsByCategory(filtered)
+  const groups = groupByCategory(filtered)
 
   return (
     <div className="table-block">
@@ -242,7 +266,7 @@ function SoftwareSetsSection({ items }: SoftwareSetsSectionProps) {
       ) : (
         <div className="category-groups">
           {groups.map(([category, groupItems]) => (
-            <details className="category-group" open key={category}>
+            <details className="category-group" key={category}>
               <summary>
                 {category || 'Ohne Kategorie'} <span className="category-count">({groupItems.length})</span>
               </summary>
