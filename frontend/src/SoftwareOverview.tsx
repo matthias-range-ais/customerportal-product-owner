@@ -122,12 +122,16 @@ function SoftwareTable({ items }: SoftwareTableProps) {
   const filtered = items.filter((item) => matchesSoftwareQuery(item, normalizedQuery))
   const groups = groupByCategory(filtered)
 
-  // Guards against a stale expandedId surviving a visible-item-set change (environment switch,
-  // or the search filtering a different item into view) — without this, a detail block could
-  // auto-show for an item the Product Owner never clicked.
-  useEffect(() => {
-    setExpandedId(null)
-  }, [items])
+  // No effect resetting expandedId on an `items` change: SoftwareOverview always routes any
+  // refetch (environment switch) through an intermediate `status: 'loading'` render, which
+  // unmounts this component entirely (see its `state.status === 'success' &&` gate) — so a fresh
+  // mount, with expandedId back at its useState initial value, already handles that case. The
+  // search input's own onChange below handles the "search filters a different item into view"
+  // case directly. An items-watching effect was tried here and removed: it also fires on mount
+  // (unavoidable base React behavior), and because that mount is itself gated behind the async
+  // fetch, the effect isn't guaranteed to flush before a later user interaction — it could land
+  // after a click and clobber its state. Caused intermittent test failures; see
+  // spec-fix-software-overview-test-flakiness.md.
 
   return (
     <div className="table-block">
@@ -205,12 +209,11 @@ function SoftwareSetsSection({ items }: SoftwareSetsSectionProps) {
   const [query, setQuery] = useState('')
   const [selectedStates, setSelectedStates] = useState<string[]>([])
 
-  // Guards against a stale selection surviving an environment switch — without this, a chip for
-  // a status code that doesn't exist in the new environment's data would linger (showing the raw
-  // code instead of a label) and silently filter the table down to zero matches.
-  useEffect(() => {
-    setSelectedStates([])
-  }, [items])
+  // No effect resetting selectedStates on an `items` change — see the identical rationale on
+  // SoftwareTable's expandedId: SoftwareOverview always unmounts this component on a refetch
+  // (its intermediate `status: 'loading'` render), so a fresh mount already starts with
+  // selectedStates back at `[]`; an items-watching effect here caused the same class of
+  // intermittent test failure and was removed.
 
   const stateOptions = Array.from(new Map(items.map((item) => [item.state, item.stateLabel])).entries()).sort(
     ([, labelA], [, labelB]) => labelA.localeCompare(labelB, 'de-DE'),
