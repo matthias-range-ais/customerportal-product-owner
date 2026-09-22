@@ -354,10 +354,10 @@ function SoftwareOverview({ activeEnvironment }: SoftwareOverviewProps) {
       )}
 
       {state.status === 'success' && (
-        <>
+        <div className="overview-tables">
           <SoftwareTable items={state.data.software} />
           <SoftwareSetsSection items={state.data.sets} />
-        </>
+        </div>
       )}
     </section>
   )

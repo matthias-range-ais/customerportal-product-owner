@@ -85,7 +85,7 @@ code {
 }
 
 .page {
-  max-width: 640px;
+  max-width: 1200px;
   margin: 0 auto;
   padding: 48px 24px 80px;
   display: flex;
@@ -97,6 +97,10 @@ code {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  /* Independent of .page's wider max-width (added for the two-column table layout) — without
+     this, "justify-content: space-between" on .page-header-row leaves an awkward, overly wide
+     gap between the title and the "Einstellungen" button on a normal desktop window. */
+  max-width: 640px;
 }
 
 .page-header-row {
@@ -135,6 +139,9 @@ code {
   background: var(--danger-bg);
   color: var(--danger);
   border: 1px solid var(--danger-border);
+  /* Keeps alert text at a readable line length now that .page (and .software-overview inside
+     it) can be much wider than before, for the two-column table layout. */
+  max-width: 640px;
 }
 
 .environments {
@@ -295,6 +302,27 @@ button:disabled {
 
 .software-overview {
   gap: 24px;
+}
+
+.overview-tables {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+@media (min-width: 960px) {
+  .overview-tables {
+    flex-direction: row;
+    align-items: flex-start;
+  }
+
+  .overview-tables > .table-block {
+    flex: 1 1 0;
+    /* Without this, a flex item's default min-width: auto stops it shrinking below its
+       content's width, so a wide table would push the container wider instead of the
+       existing .table-scroll handling the overflow internally. */
+    min-width: 0;
+  }
 }
 
 .table-block {

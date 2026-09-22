@@ -55,6 +55,27 @@ describe('SoftwareOverview', () => {
     expect(screen.getByRole('cell', { name: 'Released' })).toBeInTheDocument()
   })
 
+  it('wraps the Software and Sets tables in the responsive two-column layout container', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          software: [{ id: 1, name: 'MS Word', category: 'Office', description: 'Word processor', versions: [] }],
+          sets: [
+            { id: 2, name: 'Office Set', category: 'Office', state: 'RELEASED', stateLabel: 'Released', updatedOn: '2026-03-01T10:00:00Z' },
+          ],
+        }),
+      ),
+    )
+
+    const { container } = render(<SoftwareOverview activeEnvironment="test" />)
+    await screen.findByText('MS Word')
+
+    const wrapper = container.querySelector('.overview-tables')
+    expect(wrapper).not.toBeNull()
+    expect(wrapper?.querySelectorAll(':scope > .table-block')).toHaveLength(2)
+  })
+
   it('shows a placeholder row when a table has no items', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ software: [], sets: [] })))
 

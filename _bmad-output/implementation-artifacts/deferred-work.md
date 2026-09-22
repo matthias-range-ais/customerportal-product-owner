@@ -49,3 +49,12 @@
 - source_spec: `{project-root}/_bmad-output/implementation-artifacts/spec-software-overview-search-filter.md`
   summary: Wire deeper accessibility for the new Software/Sets overview controls — associate each category group's `<summary>` with its table via `aria-labelledby`, and put match counts / "no matches" messages in an `aria-live` region so a screen-reader user is told when search/filter results change.
   evidence: All interactive controls already have `aria-label`s; this is a refinement beyond that baseline. No accessibility requirement is recorded for this internal single-user tool — worth a future pass if that changes.
+
+## Deferred from: bmad-build multi-goal split (2026-09-22)
+
+- source_spec: none
+  summary: Restructure the Software table like Sets — group by category (collapsed by default, count of filter-matched items per category), click a category to see its software list without a Versions column, click an individual item to open a full-width detail panel with its description and version list. Whether/when to lazy-load the version list on that click is explicitly undecided by the Product Owner yet.
+  evidence: Independently shippable from the layout split and the Sets filter rework — different component structure (grouping + a new detail/drill-down view) and an open design question (lazy-loading) the Product Owner isn't ready to settle. Split out so the layout change (chosen first) isn't blocked on it.
+- source_spec: none
+  summary: Replace the Sets table's single-select release-state `<select>` with a multi-select chip control (OR logic): picking a status from a list adds it as a removable chip (×), and default the category groups to collapsed on load.
+  evidence: Independently shippable — touches only `SoftwareSetsSection`'s filter control and default `<details>` state, unrelated to the layout split or the Software table restructuring.
