@@ -197,20 +197,43 @@ interface SoftwareSetsSectionProps {
 }
 
 /**
- * Sets table with a client-side search (name/category) combinable with a release-state filter,
+ * Sets table with a client-side search (name/category) combinable with a multi-select
+ * release-state filter (OR logic across selected statuses, chips with individual removal),
  * grouped into per-category collapsible sections, each showing the "Datum" column.
  */
 function SoftwareSetsSection({ items }: SoftwareSetsSectionProps) {
   const [query, setQuery] = useState('')
-  const [stateFilter, setStateFilter] = useState('')
+  const [selectedStates, setSelectedStates] = useState<string[]>([])
+
+  // Guards against a stale selection surviving an environment switch — without this, a chip for
+  // a status code that doesn't exist in the new environment's data would linger (showing the raw
+  // code instead of a label) and silently filter the table down to zero matches.
+  useEffect(() => {
+    setSelectedStates([])
+  }, [items])
 
   const stateOptions = Array.from(new Map(items.map((item) => [item.state, item.stateLabel])).entries()).sort(
     ([, labelA], [, labelB]) => labelA.localeCompare(labelB, 'de-DE'),
   )
+  const stateLabelByState = new Map(stateOptions)
+  const addableStateOptions = stateOptions.filter(([state]) => !selectedStates.includes(state))
+  // Alphabetical by label, matching the rest of this filter bar's sort conventions (the
+  // dropdown options and category groups), rather than raw selection/click order.
+  const sortedSelectedStates = [...selectedStates].sort((a, b) =>
+    (stateLabelByState.get(a) ?? a).localeCompare(stateLabelByState.get(b) ?? b, 'de-DE'),
+  )
+
+  function addState(state: string) {
+    setSelectedStates((current) => (current.includes(state) ? current : [...current, state]))
+  }
+
+  function removeState(state: string) {
+    setSelectedStates((current) => current.filter((selected) => selected !== state))
+  }
 
   const normalizedQuery = query.trim().toLowerCase()
   const filtered = items.filter(
-    (item) => matchesSetQuery(item, normalizedQuery) && (stateFilter === '' || item.state === stateFilter),
+    (item) => matchesSetQuery(item, normalizedQuery) && (selectedStates.length === 0 || selectedStates.includes(item.state)),
   )
   const groups = groupByCategory(filtered)
 
@@ -228,18 +251,40 @@ function SoftwareSetsSection({ items }: SoftwareSetsSectionProps) {
         />
         <select
           className="filter-input"
-          aria-label="Nach Freigabestatus filtern"
-          value={stateFilter}
-          onChange={(event) => setStateFilter(event.target.value)}
+          aria-label="Freigabestatus hinzufügen"
+          value=""
+          onChange={(event) => {
+            if (event.target.value) {
+              addState(event.target.value)
+            }
+          }}
         >
-          <option value="">Alle Status</option>
-          {stateOptions.map(([state, label]) => (
+          <option value="">+ Status hinzufügen</option>
+          {addableStateOptions.map(([state, label]) => (
             <option key={state} value={state}>
               {label}
             </option>
           ))}
         </select>
       </div>
+
+      {sortedSelectedStates.length > 0 && (
+        <ul className="chips" aria-label="Ausgewählte Freigabestatus-Filter">
+          {sortedSelectedStates.map((state) => (
+            <li key={state} className="chip">
+              {stateLabelByState.get(state) ?? state}
+              <button
+                type="button"
+                className="chip-remove"
+                aria-label={`Filter "${stateLabelByState.get(state) ?? state}" entfernen`}
+                onClick={() => removeState(state)}
+              >
+                ×
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
 
       {items.length === 0 ? (
         <div className="table-scroll">

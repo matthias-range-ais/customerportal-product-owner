@@ -516,12 +516,15 @@ describe('SoftwareOverview — Sets search, state filter, and grouping', () => {
     expect(names).toEqual(['Office Base', 'Office Extended'])
   })
 
-  it('filters by search query and release-state filter combined, keeping rows grouped by category', async () => {
+  it('filters by search query and a status chip combined, keeping rows grouped by category', async () => {
     renderWithSets()
     await screen.findByRole('heading', { name: 'Sets', level: 3 })
 
     fireEvent.change(screen.getByLabelText('Sets suchen'), { target: { value: 'office' } })
-    fireEvent.change(screen.getByLabelText('Nach Freigabestatus filtern'), { target: { value: 'DRAFT' } })
+    fireEvent.change(screen.getByLabelText('Freigabestatus hinzufügen'), { target: { value: 'DRAFT' } })
+
+    const chipList = screen.getByRole('list', { name: 'Ausgewählte Freigabestatus-Filter' })
+    expect(within(chipList).getByText('Entwurf')).toBeInTheDocument()
 
     const groups = screen.getAllByRole('group')
     expect(groups).toHaveLength(1)
@@ -532,6 +535,89 @@ describe('SoftwareOverview — Sets search, state filter, and grouping', () => {
     expect(screen.queryByText('Office Base')).not.toBeInTheDocument()
     expect(screen.queryByText('Windows Baseline')).not.toBeInTheDocument()
     expect(screen.queryByText('Misc Tool')).not.toBeInTheDocument()
+  })
+
+  it('matches any of several selected status chips (OR logic)', async () => {
+    renderWithSets()
+    await screen.findByRole('heading', { name: 'Sets', level: 3 })
+
+    fireEvent.change(screen.getByLabelText('Freigabestatus hinzufügen'), { target: { value: 'DRAFT' } })
+    fireEvent.change(screen.getByLabelText('Freigabestatus hinzufügen'), { target: { value: 'RELEASED' } })
+
+    expandAllCategoryGroups()
+    // Every fixture set is either DRAFT or RELEASED, so all four remain visible.
+    expect(screen.getByText('Office Extended')).toBeInTheDocument()
+    expect(screen.getByText('Office Base')).toBeInTheDocument()
+    expect(screen.getByText('Windows Baseline')).toBeInTheDocument()
+    expect(screen.getByText('Misc Tool')).toBeInTheDocument()
+  })
+
+  it('combines a search query with two selected status chips (AND search, OR across chips)', async () => {
+    renderWithSets()
+    await screen.findByRole('heading', { name: 'Sets', level: 3 })
+
+    fireEvent.change(screen.getByLabelText('Sets suchen'), { target: { value: 'office' } })
+    fireEvent.change(screen.getByLabelText('Freigabestatus hinzufügen'), { target: { value: 'DRAFT' } })
+    fireEvent.change(screen.getByLabelText('Freigabestatus hinzufügen'), { target: { value: 'RELEASED' } })
+    expandAllCategoryGroups()
+
+    // Matches "office" AND (DRAFT OR RELEASED): both Office sets, but not Windows Baseline
+    // (name/category don't match "office") or Misc Tool (filtered out by the search too).
+    expect(screen.getByText('Office Extended')).toBeInTheDocument()
+    expect(screen.getByText('Office Base')).toBeInTheDocument()
+    expect(screen.queryByText('Windows Baseline')).not.toBeInTheDocument()
+    expect(screen.queryByText('Misc Tool')).not.toBeInTheDocument()
+  })
+
+  it('excludes an already-selected status from the "hinzufügen" dropdown, and removing its chip restores the fuller result set', async () => {
+    renderWithSets()
+    await screen.findByRole('heading', { name: 'Sets', level: 3 })
+
+    fireEvent.change(screen.getByLabelText('Freigabestatus hinzufügen'), { target: { value: 'DRAFT' } })
+
+    const addSelect = screen.getByLabelText('Freigabestatus hinzufügen') as HTMLSelectElement
+    expect(within(addSelect).queryByRole('option', { name: 'Entwurf' })).not.toBeInTheDocument()
+    expect(within(addSelect).getByRole('option', { name: 'Released' })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Filter "Entwurf" entfernen' }))
+
+    expect(screen.queryByRole('list', { name: 'Ausgewählte Freigabestatus-Filter' })).not.toBeInTheDocument() // chip gone
+    expect(within(addSelect).getByRole('option', { name: 'Entwurf' })).toBeInTheDocument() // selectable again
+
+    expandAllCategoryGroups()
+    expect(screen.getByText('Office Extended')).toBeInTheDocument()
+    expect(screen.getByText('Office Base')).toBeInTheDocument()
+  })
+
+  it('clears selected status chips when the active environment changes and reloads the item list', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          software: [],
+          sets: [{ id: 1, name: 'Office Base', category: 'Office', state: 'RELEASED', stateLabel: 'Released', updatedOn: '2026-03-01T10:00:00Z' }],
+        }),
+      )
+      .mockResolvedValueOnce(
+        // A different environment whose sets don't include a RELEASED item at all.
+        jsonResponse({
+          software: [],
+          sets: [{ id: 2, name: 'Prod Only Tool', category: 'Tools', state: 'DRAFT', stateLabel: 'Entwurf', updatedOn: '2026-03-01T10:00:00Z' }],
+        }),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { rerender } = render(<SoftwareOverview activeEnvironment="test" />)
+    await screen.findByRole('heading', { name: 'Sets', level: 3 })
+    fireEvent.change(screen.getByLabelText('Freigabestatus hinzufügen'), { target: { value: 'RELEASED' } })
+    expect(screen.getByRole('list', { name: 'Ausgewählte Freigabestatus-Filter' })).toBeInTheDocument()
+
+    rerender(<SoftwareOverview activeEnvironment="prod" />)
+    await screen.findByText('Prod Only Tool')
+
+    // The stale RELEASED chip is gone — otherwise every set in the new environment (all DRAFT)
+    // would be silently filtered out with no visible explanation.
+    expect(screen.queryByRole('list', { name: 'Ausgewählte Freigabestatus-Filter' })).not.toBeInTheDocument()
   })
 
   it('matches sets by category alone, independent of the name-match branch', async () => {
