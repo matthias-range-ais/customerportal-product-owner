@@ -1,9 +1,14 @@
 import type { Environment } from '../../domain/credentials-port.js';
 import type {
+  AssignedSetItem,
   ConnectionCheckResult,
   CredentialsSource,
+  EquipmentAssignmentsResult,
   EquipmentCloudFailure,
   EquipmentCloudPort,
+  EquipmentItem,
+  EquipmentListResult,
+  InstalledSoftwareItem,
   SoftwareItem,
   SoftwareListResult,
   SoftwareSetItem,
@@ -16,6 +21,9 @@ const PING_PATH = '/cloudconnect/api/softwarecenter/v1/ping';
 const SHAREDSOFTWARE_PATH = '/cloudconnect/api/softwarecenter/v1/sharedsoftware';
 const SHAREDSETS_PATH = '/cloudconnect/api/softwarecenter/v1/sharedsets';
 const RELEASES_PATH = '/cloudconnect/api/softwarecenter/v1/releases';
+// Always `hierarchy_type: 'things'` — per Story 1.5's "Decided" note, never exposed as a
+// parameter anywhere in this adapter, the route, or the UI (hierarchy browsing is out of scope).
+const THINGS_PATH = '/cloudconnect/api/equipmenthub/v1/things';
 const DEFAULT_TIMEOUT_MS = 5000;
 const MAX_ERROR_BODY_LENGTH = 500;
 // Bounded per the Story 1.4 "Always" note — follows `controls.next` but never loops forever
@@ -48,6 +56,33 @@ type RawSoftwareSetItem = {
 };
 type RawReleaseItem = { release_id: string; label: string };
 
+// Fields typed nullable per this file's established defensive convention: `id`/`name`/
+// `equipment_type` are documented as always-present strings in
+// openapi_equipmentcloud_preview.yaml's `things` example, but that example hasn't been verified
+// against a live EquipmentCloud response in this session (same caveat as Story 1.4's `category`,
+// which the live API did diverge from despite being always-present in its own documented example).
+type RawEquipmentItem = { id?: string | null; name?: string | null; equipment_type?: string | null };
+
+// One entry inside a `.../things/{id}/installed` outer item's `installed` sub-array. Field names
+// match openapi_equipmentcloud_preview.yaml's documented example response for this endpoint, but
+// that hasn't been verified against a live EquipmentCloud response in this session — same caveat
+// as Story 1.4's `category`, so every field is handled defensively below regardless.
+type RawInstalledEntry = {
+  software_id?: number | null;
+  software?: string | null;
+  category?: string | null;
+  version_id?: number | null;
+  version?: string | null;
+};
+// One outer `.../things/{id}/installed` item — one installation event.
+type RawInstalledEvent = {
+  installed_on?: string | null;
+  comments?: string | null;
+  installed?: RawInstalledEntry[] | null;
+};
+// Same shape as `RawSoftwareSetItem` minus `category`, which this response doesn't carry.
+type RawAssignedSetItem = { id: number; name: string; state: string; updated_on: string | null | undefined };
+
 type FetchResult<T> = { ok: true; data: T } | EquipmentCloudFailure;
 
 /**
@@ -68,6 +103,11 @@ const DEFAULT_BASE_URLS: Record<Environment, string> = {
 
 export function resolveBaseUrl(environment: Environment): string {
   return DEFAULT_BASE_URLS[environment];
+}
+
+/** Builds `/cloudconnect/api/softwarecenter/v1/things/{id}/{installed,sets}` for one equipment ID. */
+function thingAssignmentsPath(equipmentId: string, kind: 'installed' | 'sets'): string {
+  return `/cloudconnect/api/softwarecenter/v1/things/${encodeURIComponent(equipmentId)}/${kind}`;
 }
 
 /**
@@ -170,12 +210,10 @@ export class EquipmentCloudClient implements EquipmentCloudPort {
    * single `GET .../releases` lookup (falling back to the raw state string if unmapped).
    */
   async listSets(): Promise<SoftwareSetListResult> {
-    const releasesResult = await this.fetchAllPages<RawReleaseItem>(`${this.baseUrl}${RELEASES_PATH}`);
-    if (!releasesResult.ok) {
-      return releasesResult;
+    const labelsResult = await this.loadStateLabels();
+    if (!labelsResult.ok) {
+      return labelsResult;
     }
-
-    const labelByState = new Map(releasesResult.data.map((release) => [release.release_id, release.label]));
 
     const setsResult = await this.fetchAllPages<RawSoftwareSetItem>(`${this.baseUrl}${SHAREDSETS_PATH}`);
     if (!setsResult.ok) {
@@ -187,11 +225,93 @@ export class EquipmentCloudClient implements EquipmentCloudPort {
       name: set.name,
       category: set.category ?? '',
       state: set.state,
-      stateLabel: labelByState.get(set.state) ?? set.state,
+      stateLabel: labelsResult.data.get(set.state) ?? set.state,
       updatedOn: set.updated_on ?? '',
     }));
 
     return { ok: true, items };
+  }
+
+  /** All equipment (`equipmenthub/v1/things`) — a single call, no pagination (this list has no `controls`). */
+  async listEquipment(): Promise<EquipmentListResult> {
+    const result = await this.getJson<{ items?: RawEquipmentItem[] }>(`${this.baseUrl}${THINGS_PATH}`);
+    if (!result.ok) {
+      return result;
+    }
+
+    const items: EquipmentItem[] = (result.data.items ?? []).map((item) => ({
+      id: item.id ?? '',
+      name: item.name ?? '',
+      equipmentType: item.equipment_type ?? '',
+    }));
+
+    return { ok: true, items };
+  }
+
+  /**
+   * One piece of equipment's currently installed software (flattened, per Story 1.5's "Decided"
+   * note — every outer `.../installed` entry's `installed` sub-array is combined into one list,
+   * attaching that entry's `installed_on`) and its assigned sets (paginated like `listSets()`,
+   * reusing the same release-state label lookup via `loadStateLabels()`).
+   */
+  async getEquipmentAssignments(equipmentId: string): Promise<EquipmentAssignmentsResult> {
+    const installedResult = await this.getJson<{ items?: RawInstalledEvent[] }>(
+      `${this.baseUrl}${thingAssignmentsPath(equipmentId, 'installed')}`,
+    );
+    if (!installedResult.ok) {
+      return installedResult;
+    }
+
+    const installed: InstalledSoftwareItem[] = [];
+    for (const event of installedResult.data.items ?? []) {
+      const installedOn = event.installed_on ?? '';
+      for (const entry of event.installed ?? []) {
+        installed.push({
+          softwareId: entry.software_id ?? 0,
+          software: entry.software ?? '',
+          category: entry.category ?? '',
+          versionId: entry.version_id ?? 0,
+          version: entry.version ?? '',
+          installedOn,
+        });
+      }
+    }
+
+    const labelsResult = await this.loadStateLabels();
+    if (!labelsResult.ok) {
+      return labelsResult;
+    }
+
+    const setsResult = await this.fetchAllPages<RawAssignedSetItem>(
+      `${this.baseUrl}${thingAssignmentsPath(equipmentId, 'sets')}`,
+    );
+    if (!setsResult.ok) {
+      return setsResult;
+    }
+
+    const sets: AssignedSetItem[] = setsResult.data.map((set) => ({
+      id: set.id,
+      name: set.name,
+      state: set.state,
+      stateLabel: labelsResult.data.get(set.state) ?? set.state,
+      updatedOn: set.updated_on ?? '',
+    }));
+
+    return { ok: true, installed, sets };
+  }
+
+  /**
+   * Resolves the release `state` → human label lookup via a single `GET .../releases` call.
+   * Factored out of `listSets()` so `getEquipmentAssignments()` can reuse the exact same lookup
+   * instead of duplicating the `RELEASES_PATH` fetch + `Map` construction, per Story 1.5's
+   * "Decided" note.
+   */
+  private async loadStateLabels(): Promise<FetchResult<Map<string, string>>> {
+    const releasesResult = await this.fetchAllPages<RawReleaseItem>(`${this.baseUrl}${RELEASES_PATH}`);
+    if (!releasesResult.ok) {
+      return releasesResult;
+    }
+    return { ok: true, data: new Map(releasesResult.data.map((release) => [release.release_id, release.label])) };
   }
 
   private authHeader(): string {

@@ -150,6 +150,33 @@ export async function buildApp(options: BuildAppOptions = {}) {
     return { software: softwareResult.items, sets: setsResult.items };
   });
 
+  // Same NOT_CONFIGURED convention as GET /api/software, per Story 1.5's "Code Map" note.
+  app.get('/api/equipment', async (_request, reply) => {
+    if (!activeEnvironment) {
+      return reply.code(409).send({ error: 'NOT_CONFIGURED' });
+    }
+
+    const client = createEquipmentCloudClient(activeEnvironment, credentialsPort);
+    if (!client) {
+      return reply.code(409).send({ error: 'NOT_CONFIGURED' });
+    }
+
+    return client.listEquipment();
+  });
+
+  app.get<{ Params: { id: string } }>('/api/equipment/:id/assignments', async (request, reply) => {
+    if (!activeEnvironment) {
+      return reply.code(409).send({ error: 'NOT_CONFIGURED' });
+    }
+
+    const client = createEquipmentCloudClient(activeEnvironment, credentialsPort);
+    if (!client) {
+      return reply.code(409).send({ error: 'NOT_CONFIGURED' });
+    }
+
+    return client.getEquipmentAssignments(request.params.id);
+  });
+
   await app.register(fastifyStatic, {
     root: frontendDist,
   });

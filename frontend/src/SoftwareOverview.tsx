@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { readErrorCode } from './api-utils.ts'
+import { failureMessage, formatDate, isEquipmentCloudFailure, readErrorCode } from './api-utils.ts'
 import type { Environment } from './settings-types.ts'
 
 interface SoftwareVersion {
@@ -29,45 +29,11 @@ interface SoftwareOverviewData {
   sets: SoftwareSetItem[]
 }
 
-// Mirrors EquipmentCloudFailure (src/adapters/equipmentcloud/equipmentcloud-port.ts) — the
-// route passes this through verbatim, same convention as /api/settings/test-connection.
-type EquipmentCloudFailure =
-  | { ok: false; kind: 'http-error'; status: number; body: string }
-  | { ok: false; kind: 'network-error'; message: string }
-  | { ok: false; kind: 'timeout' }
-
 type OverviewState =
   | { status: 'loading' }
   | { status: 'not-configured' }
   | { status: 'error'; message: string }
   | { status: 'success'; data: SoftwareOverviewData }
-
-function isEquipmentCloudFailure(body: unknown): body is EquipmentCloudFailure {
-  return typeof body === 'object' && body !== null && (body as { ok?: unknown }).ok === false
-}
-
-function failureMessage(failure: EquipmentCloudFailure): string {
-  if (failure.kind === 'http-error') {
-    return `EquipmentCloud-Fehler ${failure.status}: ${failure.body || '(kein Antworttext)'}`
-  }
-  if (failure.kind === 'timeout') {
-    return 'Zeitüberschreitung: keine Antwort von EquipmentCloud.'
-  }
-  return `Netzwerkfehler: ${failure.message}`
-}
-
-/**
- * Formats an EquipmentCloud `updated_on` ISO-8601 timestamp for a German audience. Falls back to
- * the raw string (instead of "Invalid Date") when the value can't be parsed, per the "Datum"
- * column's edge case in the spec's I/O matrix.
- */
-function formatDate(iso: string): string {
-  const date = new Date(iso)
-  if (Number.isNaN(date.getTime())) {
-    return iso
-  }
-  return date.toLocaleDateString('de-DE')
-}
 
 function matchesSoftwareQuery(item: SoftwareItem, normalizedQuery: string): boolean {
   if (!normalizedQuery) {

@@ -544,3 +544,244 @@ describe('EquipmentCloudClient.listSets', () => {
     });
   });
 });
+
+describe('EquipmentCloudClient.listEquipment', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('fetches things in a single call (no pagination) and maps equipment_type to equipmentType', async () => {
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url === 'https://example.test/cloudconnect/api/equipmenthub/v1/things') {
+        return Promise.resolve(
+          jsonResponse({
+            items: [
+              { id: 'HPC0815', name: 'Router 1', equipment_type: 'Router' },
+              { id: 'HPC0816', name: 'Router 2', equipment_type: 'Router' },
+            ],
+          }),
+        );
+      }
+      throw new Error(`unexpected fetch to ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = new EquipmentCloudClient('https://example.test', CREDENTIALS);
+    const result = await client.listEquipment();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({
+      ok: true,
+      items: [
+        { id: 'HPC0815', name: 'Router 1', equipmentType: 'Router' },
+        { id: 'HPC0816', name: 'Router 2', equipmentType: 'Router' },
+      ],
+    });
+  });
+
+  it('normalizes a missing/null equipment_type to an empty string', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(jsonResponse({ items: [{ id: 'HPC0815', name: 'Router 1', equipment_type: null }] })),
+    );
+
+    const client = new EquipmentCloudClient('https://example.test', CREDENTIALS);
+    const result = await client.listEquipment();
+
+    expect(result).toEqual({ ok: true, items: [{ id: 'HPC0815', name: 'Router 1', equipmentType: '' }] });
+  });
+
+  it('returns an empty list when the response has no items at all', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({})));
+
+    const client = new EquipmentCloudClient('https://example.test', CREDENTIALS);
+    const result = await client.listEquipment();
+
+    expect(result).toEqual({ ok: true, items: [] });
+  });
+
+  it('surfaces the raw http-error when the things call is rejected', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('Unauthorized', { status: 401 })));
+
+    const client = new EquipmentCloudClient('https://example.test', CREDENTIALS);
+    const result = await client.listEquipment();
+
+    expect(result).toEqual({ ok: false, kind: 'http-error', status: 401, body: 'Unauthorized' });
+  });
+
+  it('surfaces a network error distinctly', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('getaddrinfo ENOTFOUND example.test')));
+
+    const client = new EquipmentCloudClient('https://example.test', CREDENTIALS);
+    const result = await client.listEquipment();
+
+    expect(result).toEqual({ ok: false, kind: 'network-error', message: 'getaddrinfo ENOTFOUND example.test' });
+  });
+});
+
+describe('EquipmentCloudClient.getEquipmentAssignments', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('flattens every installation event\'s `installed` sub-array, attaching that event\'s installed_on, and resolves set state labels', async () => {
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url === 'https://example.test/cloudconnect/api/softwarecenter/v1/things/HPC0815/installed') {
+        return Promise.resolve(
+          jsonResponse({
+            items: [
+              {
+                installed_on: '2026-01-10T09:00:00Z',
+                comments: 'Initial rollout',
+                installed: [
+                  { software_id: 155, software: 'MS Word', category: 'Office', version_id: 30, version: '2016' },
+                  { software_id: 156, software: 'Windows 10', category: 'OS', version_id: 40, version: '21H2' },
+                ],
+              },
+              {
+                installed_on: '2026-02-01T09:00:00Z',
+                installed: [{ software_id: 157, software: 'Antivirus', category: 'Security', version_id: 1, version: '1.0' }],
+              },
+            ],
+          }),
+        );
+      }
+      if (url === 'https://example.test/cloudconnect/api/softwarecenter/v1/releases') {
+        return Promise.resolve(jsonResponse({ items: [{ release_id: 'RELEASED', label: 'Released' }] }));
+      }
+      if (url === 'https://example.test/cloudconnect/api/softwarecenter/v1/things/HPC0815/sets') {
+        return Promise.resolve(
+          jsonResponse({
+            items: [{ id: 2, name: 'Office Set', state: 'RELEASED', updated_on: '2026-03-01T10:00:00Z' }],
+          }),
+        );
+      }
+      throw new Error(`unexpected fetch to ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = new EquipmentCloudClient('https://example.test', CREDENTIALS);
+    const result = await client.getEquipmentAssignments('HPC0815');
+
+    expect(result).toEqual({
+      ok: true,
+      installed: [
+        { softwareId: 155, software: 'MS Word', category: 'Office', versionId: 30, version: '2016', installedOn: '2026-01-10T09:00:00Z' },
+        { softwareId: 156, software: 'Windows 10', category: 'OS', versionId: 40, version: '21H2', installedOn: '2026-01-10T09:00:00Z' },
+        { softwareId: 157, software: 'Antivirus', category: 'Security', versionId: 1, version: '1.0', installedOn: '2026-02-01T09:00:00Z' },
+      ],
+      sets: [{ id: 2, name: 'Office Set', state: 'RELEASED', stateLabel: 'Released', updatedOn: '2026-03-01T10:00:00Z' }],
+    });
+  });
+
+  it('encodes the equipment id into both the installed and sets URLs', async () => {
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url === 'https://example.test/cloudconnect/api/softwarecenter/v1/things/EQ%2F1/installed') {
+        return Promise.resolve(jsonResponse({ items: [] }));
+      }
+      if (url === 'https://example.test/cloudconnect/api/softwarecenter/v1/releases') {
+        return Promise.resolve(jsonResponse({ items: [] }));
+      }
+      if (url === 'https://example.test/cloudconnect/api/softwarecenter/v1/things/EQ%2F1/sets') {
+        return Promise.resolve(jsonResponse({ items: [] }));
+      }
+      throw new Error(`unexpected fetch to ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = new EquipmentCloudClient('https://example.test', CREDENTIALS);
+    const result = await client.getEquipmentAssignments('EQ/1');
+
+    expect(result).toEqual({ ok: true, installed: [], sets: [] });
+  });
+
+  it('returns empty installed/sets lists when equipment has nothing installed/assigned', async () => {
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url.endsWith('/installed')) {
+        return Promise.resolve(jsonResponse({ items: [] }));
+      }
+      if (url.endsWith('/releases')) {
+        return Promise.resolve(jsonResponse({ items: [] }));
+      }
+      if (url.endsWith('/sets')) {
+        return Promise.resolve(jsonResponse({ items: [] }));
+      }
+      throw new Error(`unexpected fetch to ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = new EquipmentCloudClient('https://example.test', CREDENTIALS);
+    const result = await client.getEquipmentAssignments('HPC0815');
+
+    expect(result).toEqual({ ok: true, installed: [], sets: [] });
+  });
+
+  it('aggregates multi-page assigned sets via controls[0].next', async () => {
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url.endsWith('/installed')) {
+        return Promise.resolve(jsonResponse({ items: [] }));
+      }
+      if (url.endsWith('/releases')) {
+        return Promise.resolve(jsonResponse({ items: [] }));
+      }
+      if (url === 'https://example.test/cloudconnect/api/softwarecenter/v1/things/HPC0815/sets') {
+        return Promise.resolve(
+          jsonResponse({
+            items: [{ id: 1, name: 'Set A', state: 'DRAFT', updated_on: null }],
+            controls: [{ next: 'https://example.test/sets-page2' }],
+          }),
+        );
+      }
+      if (url === 'https://example.test/sets-page2') {
+        return Promise.resolve(jsonResponse({ items: [{ id: 2, name: 'Set B', state: 'DRAFT', updated_on: null }] }));
+      }
+      throw new Error(`unexpected fetch to ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = new EquipmentCloudClient('https://example.test', CREDENTIALS);
+    const result = await client.getEquipmentAssignments('HPC0815');
+
+    expect(result.ok).toBe(true);
+    expect(result.ok && result.sets.map((set) => set.id)).toEqual([1, 2]);
+  });
+
+  it('surfaces the raw http-error when the installed call is rejected', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('Unauthorized', { status: 401 })));
+
+    const client = new EquipmentCloudClient('https://example.test', CREDENTIALS);
+    const result = await client.getEquipmentAssignments('HPC0815');
+
+    expect(result).toEqual({ ok: false, kind: 'http-error', status: 401, body: 'Unauthorized' });
+  });
+
+  it('surfaces the raw http-error when the sets call is rejected', async () => {
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url.endsWith('/installed')) {
+        return Promise.resolve(jsonResponse({ items: [] }));
+      }
+      if (url.endsWith('/releases')) {
+        return Promise.resolve(jsonResponse({ items: [] }));
+      }
+      if (url.endsWith('/sets')) {
+        return Promise.resolve(new Response('Forbidden', { status: 403 }));
+      }
+      throw new Error(`unexpected fetch to ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = new EquipmentCloudClient('https://example.test', CREDENTIALS);
+    const result = await client.getEquipmentAssignments('HPC0815');
+
+    expect(result).toEqual({ ok: false, kind: 'http-error', status: 403, body: 'Forbidden' });
+  });
+
+  it('surfaces a network error distinctly', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('getaddrinfo ENOTFOUND example.test')));
+
+    const client = new EquipmentCloudClient('https://example.test', CREDENTIALS);
+    const result = await client.getEquipmentAssignments('HPC0815');
+
+    expect(result).toEqual({ ok: false, kind: 'network-error', message: 'getaddrinfo ENOTFOUND example.test' });
+  });
+});

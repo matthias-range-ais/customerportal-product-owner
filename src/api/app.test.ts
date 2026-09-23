@@ -52,6 +52,22 @@ class FailingCredentialsPort implements CredentialsPort, CredentialsSource {
   }
 }
 
+// Reports itself as configured (so buildApp activates it at startup) but returns no credentials
+// — exercises the `createEquipmentCloudClient` returns-`null` branch shared by every EquipmentCloud
+// read route, distinct from "no environment active at all".
+class HasCredentialsButUnreadablePort implements CredentialsPort, CredentialsSource {
+  saveCredentials(): void {}
+  hasCredentials(): boolean {
+    return true;
+  }
+  getUsername(): string | null {
+    return 'alice';
+  }
+  getCredentials(): { username: string; password: string } | null {
+    return null;
+  }
+}
+
 describe('buildApp', () => {
   afterEach(() => {
     if (existsSync(indexHtmlMoved)) {
@@ -488,20 +504,6 @@ describe('GET /api/software', () => {
   });
 
   it('returns NOT_CONFIGURED when the active environment has no stored credentials (createEquipmentCloudClient returns null)', async () => {
-    // Reports itself as configured (so buildApp activates it at startup) but returns no
-    // credentials — mirrors the equivalent `null`-client branch covered for test-connection.
-    class HasCredentialsButUnreadablePort implements CredentialsPort, CredentialsSource {
-      saveCredentials(): void {}
-      hasCredentials(): boolean {
-        return true;
-      }
-      getUsername(): string | null {
-        return 'alice';
-      }
-      getCredentials(): { username: string; password: string } | null {
-        return null;
-      }
-    }
     const app = await buildApp({
       logger: false,
       credentialsPort: new HasCredentialsButUnreadablePort(),
@@ -595,6 +597,175 @@ describe('GET /api/software', () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('getaddrinfo ENOTFOUND eqcloud-test')));
 
     const response = await app.inject({ method: 'GET', url: '/api/software' });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      ok: false,
+      kind: 'network-error',
+      message: 'getaddrinfo ENOTFOUND eqcloud-test',
+    });
+
+    await app.close();
+  });
+});
+
+describe('GET /api/equipment', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    if (existsSync(indexHtmlMoved)) {
+      renameSync(indexHtmlMoved, indexHtml);
+    }
+  });
+
+  it('returns NOT_CONFIGURED when no environment is active', async () => {
+    const app = await buildApp({ logger: false, credentialsPort: new InMemoryCredentialsPort() });
+
+    const response = await app.inject({ method: 'GET', url: '/api/equipment' });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toEqual({ error: 'NOT_CONFIGURED' });
+
+    await app.close();
+  });
+
+  it('returns NOT_CONFIGURED when the active environment has no stored credentials (createEquipmentCloudClient returns null)', async () => {
+    const app = await buildApp({
+      logger: false,
+      credentialsPort: new HasCredentialsButUnreadablePort(),
+      initialEnvironment: 'test',
+    });
+
+    const response = await app.inject({ method: 'GET', url: '/api/equipment' });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toEqual({ error: 'NOT_CONFIGURED' });
+
+    await app.close();
+  });
+
+  it('returns the equipment list for the active environment', async () => {
+    const credentialsPort = new InMemoryCredentialsPort();
+    credentialsPort.saveCredentials('test', 'alice', 'secret');
+    const app = await buildApp({ logger: false, credentialsPort, initialEnvironment: 'test' });
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(jsonResponse({ items: [{ id: 'HPC0815', name: 'Router 1', equipment_type: 'Router' }] })),
+    );
+
+    const response = await app.inject({ method: 'GET', url: '/api/equipment' });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      ok: true,
+      items: [{ id: 'HPC0815', name: 'Router 1', equipmentType: 'Router' }],
+    });
+
+    await app.close();
+  });
+
+  it('surfaces the raw EquipmentCloud error when the things call is rejected', async () => {
+    const credentialsPort = new InMemoryCredentialsPort();
+    credentialsPort.saveCredentials('test', 'alice', 'wrong');
+    const app = await buildApp({ logger: false, credentialsPort, initialEnvironment: 'test' });
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('Unauthorized', { status: 401 })));
+
+    const response = await app.inject({ method: 'GET', url: '/api/equipment' });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ ok: false, kind: 'http-error', status: 401, body: 'Unauthorized' });
+
+    await app.close();
+  });
+});
+
+describe('GET /api/equipment/:id/assignments', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    if (existsSync(indexHtmlMoved)) {
+      renameSync(indexHtmlMoved, indexHtml);
+    }
+  });
+
+  it('returns NOT_CONFIGURED when no environment is active', async () => {
+    const app = await buildApp({ logger: false, credentialsPort: new InMemoryCredentialsPort() });
+
+    const response = await app.inject({ method: 'GET', url: '/api/equipment/HPC0815/assignments' });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toEqual({ error: 'NOT_CONFIGURED' });
+
+    await app.close();
+  });
+
+  it('returns NOT_CONFIGURED when the active environment has no stored credentials (createEquipmentCloudClient returns null)', async () => {
+    const app = await buildApp({
+      logger: false,
+      credentialsPort: new HasCredentialsButUnreadablePort(),
+      initialEnvironment: 'test',
+    });
+
+    const response = await app.inject({ method: 'GET', url: '/api/equipment/HPC0815/assignments' });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toEqual({ error: 'NOT_CONFIGURED' });
+
+    await app.close();
+  });
+
+  it('returns the flattened installed software and resolved sets for the given equipment', async () => {
+    const credentialsPort = new InMemoryCredentialsPort();
+    credentialsPort.saveCredentials('test', 'alice', 'secret');
+    const app = await buildApp({ logger: false, credentialsPort, initialEnvironment: 'test' });
+
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url.endsWith('/things/HPC0815/installed')) {
+        return Promise.resolve(
+          jsonResponse({
+            items: [
+              {
+                installed_on: '2026-01-10T09:00:00Z',
+                installed: [{ software_id: 1, software: 'MS Word', category: 'Office', version_id: 30, version: '2016' }],
+              },
+            ],
+          }),
+        );
+      }
+      if (url.endsWith('/releases')) {
+        return Promise.resolve(jsonResponse({ items: [{ release_id: 'RELEASED', label: 'Released' }] }));
+      }
+      if (url.endsWith('/things/HPC0815/sets')) {
+        return Promise.resolve(
+          jsonResponse({ items: [{ id: 2, name: 'Office Set', state: 'RELEASED', updated_on: '2026-03-01T10:00:00Z' }] }),
+        );
+      }
+      throw new Error(`unexpected fetch to ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const response = await app.inject({ method: 'GET', url: '/api/equipment/HPC0815/assignments' });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      ok: true,
+      installed: [
+        { softwareId: 1, software: 'MS Word', category: 'Office', versionId: 30, version: '2016', installedOn: '2026-01-10T09:00:00Z' },
+      ],
+      sets: [{ id: 2, name: 'Office Set', state: 'RELEASED', stateLabel: 'Released', updatedOn: '2026-03-01T10:00:00Z' }],
+    });
+
+    await app.close();
+  });
+
+  it('reports a network error distinctly when EquipmentCloud is unreachable', async () => {
+    const credentialsPort = new InMemoryCredentialsPort();
+    credentialsPort.saveCredentials('test', 'alice', 'secret');
+    const app = await buildApp({ logger: false, credentialsPort, initialEnvironment: 'test' });
+
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('getaddrinfo ENOTFOUND eqcloud-test')));
+
+    const response = await app.inject({ method: 'GET', url: '/api/equipment/HPC0815/assignments' });
 
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({

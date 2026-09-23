@@ -108,12 +108,30 @@ describe('App', () => {
       mockFetchRoutes({
         'GET /api/settings': [jsonResponse(settingsSnapshot())],
         'GET /api/software': [softwareNotConfigured()],
+        'GET /api/equipment': [jsonResponse({ error: 'NOT_CONFIGURED' }, false, 409)],
       }),
     )
 
     render(<App />)
 
     expect(await screen.findByRole('region', { name: 'SoftwareCenter-Übersicht' })).toBeInTheDocument()
+  })
+
+  it('mounts the Equipment Assignments section', async () => {
+    vi.stubGlobal(
+      'fetch',
+      mockFetchRoutes({
+        'GET /api/settings': [jsonResponse(settingsSnapshot())],
+        'GET /api/software': [softwareNotConfigured()],
+        'GET /api/equipment': [jsonResponse({ error: 'NOT_CONFIGURED' }, false, 409)],
+      }),
+    )
+
+    render(<App />)
+
+    expect(
+      await screen.findByRole('region', { name: 'Kundenausrüstung & aktuelle Zuordnungen' }),
+    ).toBeInTheDocument()
   })
 
   it('updates the header once an environment is selected as active in the settings dialog', async () => {

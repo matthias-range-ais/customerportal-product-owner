@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import EquipmentAssignments from './EquipmentAssignments.tsx'
 import SettingsDialog from './SettingsDialog.tsx'
 import SoftwareOverview from './SoftwareOverview.tsx'
 import { ENVIRONMENT_LABELS, type SettingsSnapshot } from './settings-types.ts'
@@ -65,6 +66,8 @@ function App() {
       />
 
       <SoftwareOverview activeEnvironment={settings?.active ?? null} />
+
+      <EquipmentAssignments activeEnvironment={settings?.active ?? null} />
     </main>
   )
 }

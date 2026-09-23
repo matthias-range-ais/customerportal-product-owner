@@ -536,6 +536,44 @@ input[type='search'].filter-input {
   margin: 0;
 }
 
+.equipment-assignments {
+  gap: 24px;
+}
+
+.selected-equipment {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.selected-equipment p {
+  font-size: 14px;
+}
+
+.equipment-select-row {
+  font: inherit;
+  font-weight: 400;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+  text-align: left;
+}
+
+.equipment-select-row:hover {
+  text-decoration: underline;
+}
+
+.equipment-select-row:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-bg);
+}
+
 .settings-dialog {
   width: min(560px, calc(100vw - 48px));
   max-height: min(80vh, 720px);
